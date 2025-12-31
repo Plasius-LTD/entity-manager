@@ -25,39 +25,37 @@ npm install @plasius/entity-manager
 
 ## Usage Example
 
-```js
+```ts
 import {
-  defineEntity,
-  validateEntity,
-  bumpEntityVersion,
+  baseEntitySchema,
+  ensureValid,
+  bumpVersion,
 } from "@plasius/entity-manager";
 
-// Define an entity schema
-const userSchema = defineEntity({
-  name: "User",
-  version: 1,
-  fields: {
-    id: { type: "string", required: true },
-    email: { type: "string", required: true },
-    name: { type: "string", required: false },
-  },
-});
+const entity = {
+  id: "abc123",
+  type: "product",
+  version: 0,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
 
-// Validate an entity instance
-const user = { id: "abc123", email: "user@example.com", name: "Alice" };
-const { valid, errors } = validateEntity(userSchema, user);
-console.log(valid); // true
-console.log(errors); // []
+// Validate shape and timestamps
+const validEntity = ensureValid(baseEntitySchema, entity);
 
-// Bump entity version
-const userV2 = bumpEntityVersion(userSchema, 2, {
-  fields: {
-    ...userSchema.fields,
-    isActive: { type: "boolean", required: false },
-  },
-});
-console.log(userV2.version); // 2
+// Bump version and updatedAt without mutating the original
+const next = bumpVersion(validEntity);
+console.log(next.version); // 1
+console.log(next.updatedAt); // ISO8601 string for "now"
 ```
+
+### API
+
+- `baseEntitySchema`: Runtime schema for `BaseEntity` objects (`id`, `type`, `version`, `createdAt`, `updatedAt`).
+- `ensureValid(schema, value)`: Asserts that `value` matches the schema; returns the value on success and throws on validation failure.
+- `bumpVersion(entity, now?)`: Returns a copy of the entity with `version + 1` and `updatedAt` set to `now.toISOString()` (or the current time when `now` is omitted).
+
+Validation rules include non-empty strings for `id` and `type`, non-negative integer `version`, ISO8601 timestamps, and `updatedAt` not preceding `createdAt`.
 
 ---
 
