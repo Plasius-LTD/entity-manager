@@ -31,21 +31,37 @@ import {
   ensureValid,
   bumpVersion,
 } from "@plasius/entity-manager";
+import { field, createSchema } from "@plasius/schema";
+
+// Build your entity schema with @plasius/schema field builders.
+// baseEntitySchema already includes type/version/createdAt/updatedAt requirements.
+const productSchema = createSchema(
+  {
+    id: field.string().required(),
+    name: field.generalText().required(),
+    price: field.number().min(0).required(),
+    createdAt: field.dateTimeISO().required(),
+    updatedAt: field.dateTimeISO().required(),
+  },
+  "product",
+);
 
 const entity = {
   id: "abc123",
   type: "product",
-  version: 0,
+  version: "1.0.0",
+  name: "Sample",
+  price: 10,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };
 
-// Validate shape and timestamps
-const validEntity = ensureValid(baseEntitySchema, entity);
+// Validate shape, semver, and timestamp ordering
+const validEntity = ensureValid(productSchema, entity);
 
 // Bump version and updatedAt without mutating the original
 const next = bumpVersion(validEntity);
-console.log(next.version); // 1
+console.log(next.version); // 1.0.1
 console.log(next.updatedAt); // ISO8601 string for "now"
 ```
 
@@ -53,9 +69,22 @@ console.log(next.updatedAt); // ISO8601 string for "now"
 
 - `baseEntitySchema`: Runtime schema for `BaseEntity` objects (`id`, `type`, `version`, `createdAt`, `updatedAt`).
 - `ensureValid(schema, value)`: Asserts that `value` matches the schema; returns the value on success and throws on validation failure.
-- `bumpVersion(entity, now?)`: Returns a copy of the entity with `version + 1` and `updatedAt` set to `now.toISOString()` (or the current time when `now` is omitted).
+- `bumpVersion(entity, now?)`: Returns a copy of the entity with `version + 1` and `updatedAt` set to the later of `createdAt` or the provided/current time.
+- `wrapExternalSchema(schema)`: Adapts an external validator (for example, from `@plasius/schema`) to the `Schema<T>` interface so it can be used with `ensureValid`.
 
-Validation rules include non-empty strings for `id` and `type`, non-negative integer `version`, ISO8601 timestamps, and `updatedAt` not preceding `createdAt`.
+Validation rules include non-empty strings for `id`, SemVer `version`, ISO8601-parseable timestamps (milliseconds optional), and `updatedAt` not preceding `createdAt`. `bumpVersion` is immutable, bumps the SemVer patch, and guards against clock skew by never moving `updatedAt` behind `createdAt`.
+
+### Integrating with `@plasius/schema`
+
+Prefer passing the native `@plasius/schema` schemas directly to `ensureValid`. If you only have a throwing validator, adapt it with `wrapExternalSchema`:
+
+```ts
+import { wrapExternalSchema, ensureValid } from "@plasius/entity-manager";
+import { productSchema } from "@plasius/schema"; // example schema export
+
+const schema = wrapExternalSchema(productSchema);
+const product = ensureValid(schema, someUnknownData);
+```
 
 ---
 

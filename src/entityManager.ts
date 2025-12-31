@@ -1,76 +1,102 @@
+import type { SchemaShape, ValidationResult } from "@plasius/schema";
+import { createSchema, field } from "@plasius/schema";
 import { BaseEntity } from "./types.js";
 
-type Validator<T> = (value: unknown) => asserts value is T;
+type SchemaLike<T> = {
+  validate: (input: unknown, existing?: Record<string, any>) => ValidationResult<T>;
+};
 
-export interface Schema<T> {
-  name: string;
-  validate: Validator<T>;
+export interface ExternalSchema<T> {
+  name?: string;
+  validate: (value: unknown) => void;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
+const nonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
 
-const isISODateString = (value: unknown): value is string => {
-  if (typeof value !== "string") return false;
-  const parsed = new Date(value);
-  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString() === value;
-};
+const formatErrors = (errors?: string[]) =>
+  errors && errors.length > 0 ? errors.join("; ") : "Validation failed";
 
-const assertISODate = (value: unknown, field: string): asserts value is string => {
-  if (!isISODateString(value)) {
-    throw new Error(`${field} must be an ISO8601 string`);
-  }
-};
+const baseFields = {
+  id: field.string().required().validator(nonEmptyString),
+  createdAt: field.dateTimeISO().required(),
+  updatedAt: field.dateTimeISO().required(),
+} satisfies SchemaShape;
 
-const assertNonEmptyString = (value: unknown, field: string): asserts value is string => {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error(`${field} must be a non-empty string`);
-  }
-};
-
-const assertNonNegativeInteger = (value: unknown, field: string): asserts value is number => {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw new Error(`${field} must be a non-negative integer`);
-  }
-};
-
-export const baseEntitySchema: Schema<BaseEntity> = {
-  name: "BaseEntity",
-  validate: (value: unknown): asserts value is BaseEntity => {
-    if (!isRecord(value)) {
-      throw new Error("Entity must be an object");
-    }
-
-    const { id, type, version, createdAt, updatedAt } = value;
-
-    assertNonEmptyString(id, "id");
-    assertNonEmptyString(type, "type");
-    assertNonNegativeInteger(version, "version");
-    assertISODate(createdAt, "createdAt");
-    assertISODate(updatedAt, "updatedAt");
-
-    const created = new Date(createdAt);
-    const updated = new Date(updatedAt);
-    if (updated.getTime() < created.getTime()) {
-      throw new Error("updatedAt cannot be before createdAt");
-    }
+export const baseEntitySchema = createSchema(baseFields, "entity", {
+  version: "1.0.0",
+  schemaValidator: (value) => {
+    const createdMs = Date.parse((value as any).createdAt);
+    const updatedMs = Date.parse((value as any).updatedAt);
+    if (Number.isNaN(createdMs) || Number.isNaN(updatedMs)) return false;
+    return updatedMs >= createdMs;
   },
+});
+
+export function ensureValid<T>(
+  schema: SchemaLike<T>,
+  value: unknown,
+): T {
+  const result = schema.validate(value);
+  if (!result.valid || !result.value) {
+    throw new Error(formatErrors(result.errors));
+  }
+  const validatedValue = result.value as unknown as T;
+  if (typeof value !== "object" || value === null) {
+    return validatedValue;
+  }
+  const merged = {
+    ...(value as Record<string, unknown>),
+    ...(validatedValue as Record<string, unknown>),
+  };
+  return merged as T;
+}
+
+export function wrapExternalSchema<T>(schema: ExternalSchema<T>): SchemaLike<T> {
+  return {
+    validate: (value: unknown) => {
+      try {
+        schema.validate(value);
+        return { valid: true, value: value as T } as ValidationResult<T>;
+      } catch (error) {
+        const msg =
+          error instanceof Error ? error.message : typeof error === "string" ? error : "Validation failed";
+        return { valid: false, errors: [msg] } as ValidationResult<T>;
+      }
+    },
+  };
+}
+
+const parseSemVer = (version: string) => {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) {
+    throw new Error(`Invalid semver string: ${version}`);
+  }
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+  };
 };
 
-export function ensureValid<T>(schema: Schema<T>, value: unknown): T {
-  schema.validate(value);
-  return value;
-}
+const bumpPatch = (version: string) => {
+  const { major, minor, patch } = parseSemVer(version);
+  return `${major}.${minor}.${patch + 1}`;
+};
 
 export function bumpVersion<T extends BaseEntity>(
   entity: T,
   now: Date = new Date(),
 ): T {
-  ensureValid(baseEntitySchema, entity);
+  const validated = ensureValid(baseEntitySchema, entity);
+
+  const nowMs = now.getTime();
+  const createdMs = Date.parse(validated.createdAt);
+  const nextUpdatedAt = new Date(Math.max(createdMs, nowMs)).toISOString();
 
   return {
-    ...entity,
-    version: entity.version + 1,
-    updatedAt: now.toISOString(),
-  };
+    ...validated,
+    version: bumpPatch(validated.version),
+    updatedAt: nextUpdatedAt,
+  } as T;
 }
