@@ -7,7 +7,7 @@
 [![Security Policy](https://img.shields.io/badge/security%20policy-yes-orange.svg)](./SECURITY.md)
 [![Changelog](https://img.shields.io/badge/changelog-md-blue.svg)](./CHANGELOG.md)
 
-Entity definition & validation helpers for the Plasius ecosystem.
+Entity definitions and validation schemas for the Plasius ecosystem.
 
 This package is part of the **Plasius LTD** selective open-source strategy. For more on our approach, see [ADR-0013: Selective Open Source](https://github.com/Plasius-LTD/plasius-ltd-site/blob/main/docs/adrs/adr-0013%3A%20Open%20Source%20Strategy.md). This package is maintained as open source to foster community trust and enable integration, while the core Plasius platform remains proprietary.
 
@@ -23,76 +23,60 @@ npm install @plasius/entity-manager
 
 ---
 
-## Usage Example
+## Usage
 
 ```ts
 import {
-  baseEntitySchema,
-  ensureValid,
-  bumpVersion,
+  userEntitySchema,
+  PreferredDisplayOrder,
 } from "@plasius/entity-manager";
-import { field, createSchema } from "@plasius/schema";
 
-// Build your entity schema with @plasius/schema field builders.
-// baseEntitySchema already includes type/version/createdAt/updatedAt requirements.
-const productSchema = createSchema(
-  {
-    id: field.string().required(),
-    name: field.generalText().required(),
-    price: field.number().min(0).required(),
-    createdAt: field.dateTimeISO().required(),
-    updatedAt: field.dateTimeISO().required(),
+const user = {
+  type: "userEntity",
+  version: "1.0",
+  email: "alice@example.com",
+  name: {
+    firstName: "Alice",
+    lastName: "Lovelace",
+    displayName: "Alice L.",
+    preferredDisplayOrder: PreferredDisplayOrder.DISPLAY_NAME,
   },
-  "product",
-);
-
-const entity = {
-  id: "abc123",
-  type: "product",
-  version: "1.0.0",
-  name: "Sample",
-  price: 10,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
 };
 
-// Validate shape, semver, and timestamp ordering
-const validEntity = ensureValid(productSchema, entity);
-
-// Bump version and updatedAt without mutating the original
-const next = bumpVersion(validEntity);
-console.log(next.version); // 1.0.1
-console.log(next.updatedAt); // ISO8601 string for "now"
+const result = userEntitySchema.validate(user);
+if (!result.valid) {
+  console.error(result.errors);
+}
 ```
 
-### API
+---
 
-- `baseEntitySchema`: Runtime schema for `BaseEntity` objects (`id`, `type`, `version`, `createdAt`, `updatedAt`).
-- `ensureValid(schema, value)`: Asserts that `value` matches the schema; returns the value on success and throws on validation failure.
-- `bumpVersion(entity, now?)`: Returns a copy of the entity with `version + 1` and `updatedAt` set to the later of `createdAt` or the provided/current time.
-- `wrapExternalSchema(schema)`: Adapts an external validator (for example, from `@plasius/schema`) to the `Schema<T>` interface so it can be used with `ensureValid`.
+## Export Overview
 
-Validation rules include non-empty strings for `id`, SemVer `version`, ISO8601-parseable timestamps (milliseconds optional), and `updatedAt` not preceding `createdAt`. `bumpVersion` is immutable, bumps the SemVer patch, and guards against clock skew by never moving `updatedAt` behind `createdAt`.
+### Base entity
+- `baseEntitySchema`, `baseEntityShape`, `BaseEntity`
+- Required fields include `partitionKey`, `id`, `entityType`, `createdAt`, `createdBy`, and `isDeleted` (plus system `type` and `version`).
 
-### Built-in entity schemas
+### User and permissions
+- `userEntitySchema`, `userNameSchema`, `userAvatarSchema`
+- `settingsEntitySchema`, `permissionsEntitySchema`, `featureFlagEntitySchema`, `roleEntitySchema`
+- Enums: `PreferredDisplayOrder`, `UserEmailPreferences`, `UserNotificationPreferences`, `Role`, `Scope`
 
-- `userSchema`: `email` (required), `displayName` (optional text).
-- `familySchema`: `name`, `ownerId`, optional `memberIds` (defaults to `[]`).
-- `groupSchema`: `name`, optional `memberIds` (defaults to `[]`).
-- `characterSchema`: `name`, optional `class`, `level` (required positive integer).
-- `permissionsSchema`: `role` (`admin|editor|member|viewer`), `subjectType` (`user|group|family|character`), `subjectId`, optional `scopes` (defaults to `[]`).
+### Assets
+- `assetEntitySchema`, `imageAssetEntitySchema`, `audioAssetEntitySchema`, `modelAssetEntitySchema`, `objectAssetEntitySchema`
+- Enums: `AudioChannel`, `ModelAssetFormat`
 
-### Integrating with `@plasius/schema`
+### Components
+- `baseComponentSchema`, `physicsComponentSchema`, `animationComponentSchema`, `shadowComponentSchema`, `levelOfDetailComponentSchema`
+- Enum: `ComponentTypes`
 
-Prefer passing the native `@plasius/schema` schemas directly to `ensureValid`. If you only have a throwing validator, adapt it with `wrapExternalSchema`:
+### Auth and translations
+- `authenticatedUserSchema`, `AuthProvider`
+- `translatableSchema`, `supportedLanguagesSchema`
 
-```ts
-import { wrapExternalSchema, ensureValid } from "@plasius/entity-manager";
-import { productSchema } from "@plasius/schema"; // example schema export
-
-const schema = wrapExternalSchema(productSchema);
-const product = ensureValid(schema, someUnknownData);
-```
+### Validators and utilities
+- `isValidAzureTableKey`, `isValidEntityType`, `validateAssetSchema`
+- `validateFeatureFlagValue`, `validateSettingValue`
 
 ---
 

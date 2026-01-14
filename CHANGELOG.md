@@ -1,12 +1,23 @@
+
 # Changelog
 
-## Unreleased
-- add runtime `baseEntitySchema`, `ensureValid`, and `bumpVersion` helpers to enforce entity consistency
-- add validation and immutability tests for base entities
-- align README usage with the runtime API and note validation rules
-- fix test discovery and TypeScript config to cover `tests/`
-- relax ISO8601 validation to accept standard variants without milliseconds
-- keep `updatedAt` monotonic (never before `createdAt`) when bumping versions, guarding against clock skew
-- add `wrapExternalSchema` helper to plug in validators from `@plasius/schema` or other sources
-- use `@plasius/schema` field builders for base entity validation, enforce SemVer versions, and document integration
-- add first-class schemas for `user`, `family`, `group`, `character`, and `permissions`, including sensible defaults for collection fields and stricter type/version enforcement
+All notable changes to this project will be documented in this file.
+
+The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/)**, and this project adheres to **[Semantic Versioning](https://semver.org/spec/v2.0.0.html)**.
+
+---
+
+## [Unreleased]
+
+- **Added**
+  - Migrated all entity schemas, enums, and validators from `@plasius/entity-types` into `@plasius/entity-manager`.
+
+- **Changed**
+  - Replaced legacy helper APIs with entity-type exports (base entity, user, asset, component, auth, translation schemas).
+  - Refreshed tests and README to reflect the migrated schema surface.
+
+- **Fixed**
+  - `baseEntitySchema` version now accepts SemVer strings and soft-delete validation is hardened.
+
+- **Security**
+  - (placeholder)

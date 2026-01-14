@@ -1,117 +1,137 @@
 import { describe, it, expect } from "vitest";
 import {
-  ensureValid,
-  userSchema,
-  familySchema,
-  groupSchema,
-  characterSchema,
-  permissionsSchema,
-} from "../src/entityManager";
+  baseEntitySchema,
+  userEntitySchema,
+  roleEntitySchema,
+  permissionsEntitySchema,
+  PreferredDisplayOrder,
+  Role,
+  Scope,
+  EntityTypes,
+} from "../src/index.js";
 
-const now = new Date("2025-01-02T00:00:00Z");
+const now = new Date("2025-01-02T00:00:00Z").toISOString();
+const userId = "123456789012345678901";
 
-const baseMeta = {
-  type: "",
-  version: "1.0.0",
-  createdAt: now.toISOString(),
-  updatedAt: now.toISOString(),
-};
+describe("baseEntitySchema", () => {
+  const base = {
+    type: "baseEntity",
+    version: "1.0.0",
+    entityType: EntityTypes.BaseEntity,
+    partitionKey: "user-123",
+    id: "row-001",
+    createdAt: now,
+    createdBy: userId,
+    isDeleted: false,
+  };
 
-describe("domain entity schemas", () => {
-  it("validates a user", () => {
-    const user = {
-      ...baseMeta,
-      type: "user",
-      id: "user-1",
-      email: "user@example.com",
-      displayName: "Ada Lovelace",
-    };
-    const ok = ensureValid(userSchema, user);
-    expect(ok.email).toBe("user@example.com");
+  it("validates a non-deleted entity", () => {
+    const result = baseEntitySchema.validate(base);
+    expect(result.valid).toBe(true);
   });
 
-  it("rejects wrong type for user", () => {
-    const user = {
-      ...baseMeta,
-      type: "family",
-      id: "user-1",
-      email: "user@example.com",
+  it("rejects non-deleted entity with deleted fields", () => {
+    const entity = {
+      ...base,
+      deletedAt: now,
+      deletedBy: userId,
+      deletedReason: "should-not-be-set",
     };
-    expect(() => ensureValid(userSchema, user)).toThrow();
+    const result = baseEntitySchema.validate(entity);
+    expect(result.valid).toBe(false);
   });
 
-  it("validates a family", () => {
-    const fam = {
-      ...baseMeta,
-      type: "family",
-      id: "fam-1",
-      name: "Lovelace",
-      ownerId: "user-1",
-      memberIds: ["user-1"],
+  it("validates a deleted entity with required fields", () => {
+    const entity = {
+      ...base,
+      isDeleted: true,
+      deletedAt: now,
+      deletedBy: userId,
+      deletedReason: "soft-removed",
     };
-    const ok = ensureValid(familySchema, fam);
-    expect(ok.memberIds?.length).toBe(1);
+    const result = baseEntitySchema.validate(entity);
+    expect(result.valid).toBe(true);
   });
 
-  it("validates a group with default members", () => {
-    const grp = {
-      ...baseMeta,
-      type: "group",
-      id: "grp-1",
-      name: "Admins",
+  it("rejects a deleted entity missing deletedReason", () => {
+    const entity = {
+      ...base,
+      isDeleted: true,
+      deletedAt: now,
+      deletedBy: userId,
     };
-    const ok = ensureValid(groupSchema, grp);
-    expect(ok.memberIds).toEqual([]);
+    const result = baseEntitySchema.validate(entity);
+    expect(result.valid).toBe(false);
+  });
+});
+
+describe("userEntitySchema", () => {
+  const baseUser = {
+    type: "userEntity",
+    version: "1.0.0",
+    email: "alice@example.com",
+    name: {
+      firstName: "Alice",
+      lastName: "Lovelace",
+      displayName: "Alice L",
+      preferredDisplayOrder: PreferredDisplayOrder.DISPLAY_NAME,
+    },
+  };
+
+  it("validates a minimal user entity", () => {
+    const result = userEntitySchema.validate(baseUser);
+    expect(result.valid).toBe(true);
   });
 
-  it("validates a character with integer level", () => {
-    const character = {
-      ...baseMeta,
-      type: "character",
-      id: "char-1",
-      name: "Ranger",
-      class: "Archer",
-      level: 3,
-    };
-    const ok = ensureValid(characterSchema, character);
-    expect(ok.level).toBe(3);
+  it("rejects an invalid email", () => {
+    const result = userEntitySchema.validate({
+      ...baseUser,
+      email: "not-an-email",
+    });
+    expect(result.valid).toBe(false);
+  });
+});
+
+describe("roleEntitySchema", () => {
+  const baseRole = {
+    type: "roleEntity",
+    version: "1.0.0",
+    roles: [Role.USER],
+    active: true,
+    activatedBy: userId,
+  };
+
+  it("validates an active role entity", () => {
+    const result = roleEntitySchema.validate(baseRole);
+    expect(result.valid).toBe(true);
   });
 
-  it("rejects character with non-integer level", () => {
-    const character = {
-      ...baseMeta,
-      type: "character",
-      id: "char-1",
-      name: "Mage",
-      class: "Wizard",
-      level: 2.5,
-    };
-    expect(() => ensureValid(characterSchema, character)).toThrow();
+  it("rejects active role entity missing activatedBy", () => {
+    const { activatedBy, ...rest } = baseRole;
+    const result = roleEntitySchema.validate(rest);
+    expect(result.valid).toBe(false);
   });
 
-  it("validates permissions", () => {
-    const perm = {
-      ...baseMeta,
-      type: "permissions",
-      id: "perm-1",
-      role: "admin",
-      subjectType: "group",
-      subjectId: "grp-1",
-      scopes: ["read", "write"],
-    };
-    const ok = ensureValid(permissionsSchema, perm);
-    expect(ok.role).toBe("admin");
+  it("validates an inactive role entity with deactivatedBy", () => {
+    const result = roleEntitySchema.validate({
+      ...baseRole,
+      active: false,
+      deactivatedBy: userId,
+    });
+    expect(result.valid).toBe(true);
   });
+});
 
-  it("rejects permissions with invalid role", () => {
-    const perm = {
-      ...baseMeta,
-      type: "permissions",
-      id: "perm-1",
-      role: "unknown",
-      subjectType: "group",
-      subjectId: "grp-1",
-    };
-    expect(() => ensureValid(permissionsSchema, perm)).toThrow();
+describe("permissionsEntitySchema", () => {
+  it("validates a permissions entity with scopes", () => {
+    const result = permissionsEntitySchema.validate({
+      type: "permissionsEntity",
+      version: "1.0.0",
+      scopes: [Scope.READ, Scope.WRITE],
+      granted: true,
+      grantedBy: userId,
+      grantedAt: now,
+    });
+    expect(result.valid).toBe(true);
   });
 });
