@@ -9,3 +9,4 @@
 - keep `updatedAt` monotonic (never before `createdAt`) when bumping versions, guarding against clock skew
 - add `wrapExternalSchema` helper to plug in validators from `@plasius/schema` or other sources
 - use `@plasius/schema` field builders for base entity validation, enforce SemVer versions, and document integration
+- add first-class schemas for `user`, `family`, `group`, `character`, and `permissions`, including sensible defaults for collection fields and stricter type/version enforcement

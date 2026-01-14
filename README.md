@@ -74,6 +74,14 @@ console.log(next.updatedAt); // ISO8601 string for "now"
 
 Validation rules include non-empty strings for `id`, SemVer `version`, ISO8601-parseable timestamps (milliseconds optional), and `updatedAt` not preceding `createdAt`. `bumpVersion` is immutable, bumps the SemVer patch, and guards against clock skew by never moving `updatedAt` behind `createdAt`.
 
+### Built-in entity schemas
+
+- `userSchema`: `email` (required), `displayName` (optional text).
+- `familySchema`: `name`, `ownerId`, optional `memberIds` (defaults to `[]`).
+- `groupSchema`: `name`, optional `memberIds` (defaults to `[]`).
+- `characterSchema`: `name`, optional `class`, `level` (required positive integer).
+- `permissionsSchema`: `role` (`admin|editor|member|viewer`), `subjectType` (`user|group|family|character`), `subjectId`, optional `scopes` (defaults to `[]`).
+
 ### Integrating with `@plasius/schema`
 
 Prefer passing the native `@plasius/schema` schemas directly to `ensureValid`. If you only have a throwing validator, adapt it with `wrapExternalSchema`:
