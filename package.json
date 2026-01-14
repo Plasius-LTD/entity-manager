@@ -1,6 +1,6 @@
 {
   "name": "@plasius/entity-manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Entity definition & validation helpers for Plasius ecosystem",
   "type": "module",
   "main": "./dist/index.cjs",
