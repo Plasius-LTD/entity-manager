@@ -7,4 +7,6 @@ export default defineConfig({
   clean: true,
   format: ["esm", "cjs"],
   target: "es2022",
+  outDir: "dist",
+  tsconfig: "tsconfig.build.json",
 });
