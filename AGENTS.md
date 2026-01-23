@@ -24,6 +24,7 @@ This repo contains `@plasius/entity-manager`, a TypeScript library of entity def
 - Keep exported types and schemas backward compatible when possible.
 - Add or update tests for schema/validator changes.
 - Update `README.md` and `CHANGELOG.md` for user-facing changes.
+- Architectural changes require ADRs in `docs/adrs/` (or the repo ADRs folder); ensure a package-function ADR exists.
 
 ## AI guidance
 - After any change, run relevant BDD/TDD tests when they exist; mention if skipped.
