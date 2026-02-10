@@ -13,10 +13,10 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Changed**
-  - (placeholder)
+  - Publish manifest now explicitly includes `dist/` artifacts so CJS/ESM entry points are shipped.
 
 - **Fixed**
-  - (placeholder)
+  - npm package now includes `dist/index.cjs`, resolving runtime `Cannot find module .../dist/index.cjs` failures.
 
 - **Security**
   - (placeholder)
