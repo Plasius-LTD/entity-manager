@@ -13,6 +13,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.0.4] - 2026-02-10
+
+- **Added**
+  - (placeholder)
+
+- **Changed**
   - Publish manifest now explicitly includes `dist/` artifacts so CJS/ESM entry points are shipped.
 
 - **Fixed**
@@ -68,3 +82,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.1]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.1
 [1.0.2]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.2
 [1.0.3]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.3
+[1.0.4]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.4
