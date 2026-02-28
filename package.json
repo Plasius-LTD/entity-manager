@@ -32,7 +32,9 @@
     "lint": "eslint .",
     "prepare": "npm run build",
     "clean": "rimraf dist",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "pack:check": "node scripts/verify-public-package.cjs",
+    "prepublishOnly": "npm run build && npm run pack:check"
   },
   "keywords": [],
   "author": "Plasius LTD <development@plasius.co.uk>",
@@ -58,5 +60,8 @@
   },
   "overrides": {
     "minimatch": "^10.2.1"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
