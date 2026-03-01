@@ -2,7 +2,6 @@ import {
   field,
   createSchema,
   validateDateTimeISO,
-  validateSemVer,
   type Infer,
   SchemaShape,
 } from "@plasius/schema";
