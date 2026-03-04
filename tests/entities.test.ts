@@ -107,7 +107,7 @@ describe("roleEntitySchema", () => {
   });
 
   it("rejects active role entity missing activatedBy", () => {
-    const { activatedBy, ...rest } = baseRole;
+    const { activatedBy: _activatedBy, ...rest } = baseRole;
     const result = roleEntitySchema.validate(rest);
     expect(result.valid).toBe(false);
   });

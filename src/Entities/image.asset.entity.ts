@@ -1,6 +1,6 @@
 import { createSchema, field, validateUrl } from "@plasius/schema";
 import type { Infer, SchemaShape } from "@plasius/schema";
-import { AssetEntity, assetEntityShape } from "./asset.entity.js";
+import { AssetEntity } from "./asset.entity.js";
 
 const imageAssetEntityShape: SchemaShape = {
   url: field
