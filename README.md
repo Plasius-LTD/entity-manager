@@ -57,6 +57,7 @@ if (!result.valid) {
 ### Base entity
 - `baseEntitySchema`, `baseEntityShape`, `BaseEntity`
 - Required fields include `partitionKey`, `id`, `entityType`, `createdAt`, `createdBy`, and `isDeleted` (plus system `type` and `version`).
+- Persistence-only fields such as `partitionKey`, `createdBy`, `updatedBy`, `deletedBy`, and `deletedReason` are marked internal and are omitted by default when calling `schema.serialize(...)`.
 
 ### User and permissions
 - `userEntitySchema`, `userNameSchema`, `userAvatarSchema`
@@ -78,6 +79,31 @@ if (!result.valid) {
 ### Validators and utilities
 - `isValidAzureTableKey`, `isValidEntityType`, `validateAssetSchema`
 - `validateFeatureFlagValue`, `validateSettingValue`
+
+---
+
+## Public Serialization
+
+Entity schemas validate the full persisted entity shape, including internal audit and storage metadata.
+When returning data to clients, prefer `schema.serialize(entity)` so only public fields are included by default.
+
+```ts
+import { baseEntitySchema } from "@plasius/entity-manager";
+
+const payload = baseEntitySchema.serialize({
+  type: "baseEntity",
+  version: "1.0.0",
+  entityType: "baseEntity",
+  partitionKey: "tenant-a",
+  id: "row-1",
+  createdAt: new Date().toISOString(),
+  createdBy: "user-1",
+  isDeleted: false,
+});
+
+// partitionKey and createdBy are omitted from the serialized payload.
+console.log(payload);
+```
 
 ---
 

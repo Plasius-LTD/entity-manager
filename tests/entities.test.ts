@@ -4,10 +4,12 @@ import {
   userEntitySchema,
   roleEntitySchema,
   permissionsEntitySchema,
+  assetEntitySchema,
   PreferredDisplayOrder,
   Role,
   Scope,
   EntityTypes,
+  userAvatarSchema,
 } from "../src/index.js";
 
 const now = new Date("2025-01-02T00:00:00Z").toISOString();
@@ -62,6 +64,25 @@ describe("baseEntitySchema", () => {
     };
     const result = baseEntitySchema.validate(entity);
     expect(result.valid).toBe(false);
+  });
+
+  it("serializes only public base entity fields by default", () => {
+    const serialized = baseEntitySchema.serialize({
+      ...base,
+      updatedBy: userId,
+      deletedBy: userId,
+      deletedReason: "internal-note",
+      ignored: "drop",
+    });
+
+    expect(serialized).toEqual({
+      type: "baseEntity",
+      version: "1.0.0",
+      entityType: EntityTypes.BaseEntity,
+      id: "row-001",
+      createdAt: now,
+      isDeleted: false,
+    });
   });
 });
 
@@ -120,6 +141,26 @@ describe("roleEntitySchema", () => {
     });
     expect(result.valid).toBe(true);
   });
+
+  it("omits role audit actor ids from public serialization", () => {
+    const serialized = roleEntitySchema.serialize({
+      type: "roleEntity",
+      version: "1.0.0",
+      roles: [Role.USER],
+      active: true,
+      activatedBy: userId,
+      activatedAt: now,
+      deactivatedBy: userId,
+    });
+
+    expect(serialized).toEqual({
+      type: "roleEntity",
+      version: "1.0.0",
+      roles: [Role.USER],
+      active: true,
+      activatedAt: now,
+    });
+  });
 });
 
 describe("permissionsEntitySchema", () => {
@@ -133,5 +174,78 @@ describe("permissionsEntitySchema", () => {
       grantedAt: now,
     });
     expect(result.valid).toBe(true);
+  });
+
+  it("omits permission grant/revoke actor ids from public serialization", () => {
+    const serialized = permissionsEntitySchema.serialize({
+      type: "permissionsEntity",
+      version: "1.0.0",
+      scopes: [Scope.READ],
+      granted: true,
+      grantedBy: userId,
+      grantedAt: now,
+      revokedBy: userId,
+      revokedAt: now,
+    });
+
+    expect(serialized).toEqual({
+      type: "permissionsEntity",
+      version: "1.0.0",
+      scopes: [Scope.READ],
+      granted: true,
+      grantedAt: now,
+      revokedAt: now,
+    });
+  });
+});
+
+describe("asset and avatar schemas", () => {
+  it("omits asset validator actor ids from public serialization", () => {
+    const serialized = assetEntitySchema.serialize({
+      type: "AssetEntity",
+      version: "1.0.0",
+      cacheable: true,
+      validated: true,
+      validatedBy: userId,
+      validatedAt: now,
+    });
+
+    expect(serialized).toEqual({
+      type: "AssetEntity",
+      version: "1.0.0",
+      cacheable: true,
+      validated: true,
+      validatedAt: now,
+    });
+  });
+
+  it("omits avatar storage metadata from public serialization", () => {
+    const serialized = userAvatarSchema.serialize({
+      type: "userAvatar",
+      version: "1.0.0",
+      partitionKey: "tenant-a",
+      id: "user-1",
+      filename: "avatar.png",
+      contentType: "image/png",
+      url: "https://example.com/avatar.png",
+      size: 120,
+      width: 64,
+      height: 64,
+      createdAt: now,
+      createdBy: userId,
+    });
+
+    expect(serialized).toEqual({
+      type: "userAvatar",
+      version: "1.0.0",
+      id: "user-1",
+      filename: "avatar.png",
+      contentType: "image/png",
+      url: "https://example.com/avatar.png",
+      size: 120,
+      width: 64,
+      height: 64,
+      createdAt: now,
+    });
   });
 });

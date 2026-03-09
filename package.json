@@ -16,7 +16,7 @@
     "legal"
   ],
   "dependencies": {
-    "@plasius/schema": "^1.2.4"
+    "@plasius/schema": "^1.2.6"
   },
   "exports": {
     ".": {

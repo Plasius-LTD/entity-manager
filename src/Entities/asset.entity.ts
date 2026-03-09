@@ -23,6 +23,7 @@ export const assetEntityShape: SchemaShape = {
     .optional(),
 
   validatedBy: field.string()
+    .internal()
     .version("1.0")
     .description("Who validated this content")
     .optional(),

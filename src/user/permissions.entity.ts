@@ -50,6 +50,7 @@ const permissionsEntityShape: SchemaShape = {
 
   grantedBy: field
     .string()
+    .internal()
     .version("1.0")
     .description("Which user/system granted the update to permissions")
     .optional()
@@ -70,6 +71,7 @@ const permissionsEntityShape: SchemaShape = {
 
   revokedBy: field
     .string()
+    .internal()
     .version("1.0")
     .description("Who revoked the permissions")
     .optional()

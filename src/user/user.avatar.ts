@@ -23,6 +23,7 @@ export enum AvatarMimeType {
 export const userAvatarShape = {
   partitionKey: field
     .string()
+    .internal()
     .description("Avatar partition key, typically 'domain'")
     .validator(validateSafeText),
 
@@ -58,6 +59,7 @@ export const userAvatarShape = {
 
   createdBy: field
     .string()
+    .internal()
     .description("User who uploaded the avatar")
     .validator(validateUserId),
 

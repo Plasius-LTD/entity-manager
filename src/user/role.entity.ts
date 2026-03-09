@@ -33,6 +33,7 @@ const roleEntityShape: SchemaShape = {
     .as<Date>(),
 
   activatedBy: field.string()
+    .internal()
     .version("1.0")
     .description("Who activated the roles?")
     .optional()
@@ -46,6 +47,7 @@ const roleEntityShape: SchemaShape = {
     .as<Date>(),
 
   deactivatedBy: field.string()
+    .internal()
     .version("1.0")
     .description("Who deactivated the roles for this user?")
     .optional()

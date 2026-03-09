@@ -10,16 +10,17 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Added public serialization coverage for base, role, permission, asset, and avatar entities.
 
 - **Changed**
-  - (placeholder)
+  - Raised the minimum `@plasius/schema` dependency to `^1.2.6`.
+  - Marked persistence-only audit and storage fields as internal so `schema.serialize()` omits them from default public payloads.
 
 - **Fixed**
-  - (placeholder)
+  - Prevented `partitionKey`, audit actor ids, and similar persistence metadata from being treated as client-safe entity fields by default.
 
 - **Security**
-  - (placeholder)
+  - Reduced accidental leakage risk for internal entity metadata during API serialization.
 
 ## [1.0.11] - 2026-03-04
 

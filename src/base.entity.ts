@@ -13,6 +13,7 @@ export const baseEntityShape: SchemaShape = {
   // From TableEntity
   partitionKey: field
     .string()
+    .internal()
     .immutable()
     .required()
     .description("Primary partition identifier, usually user ID.")
@@ -54,6 +55,7 @@ export const baseEntityShape: SchemaShape = {
 
   createdBy: field
     .string()
+    .internal()
     .immutable()
     .required()
     .description("User ID who created the record.")
@@ -70,6 +72,7 @@ export const baseEntityShape: SchemaShape = {
 
   updatedBy: field
     .string()
+    .internal()
     .optional()
     .description("User ID of the last editor.")
     .version("1.0")
@@ -90,6 +93,7 @@ export const baseEntityShape: SchemaShape = {
 
   deletedBy: field
     .string()
+    .internal()
     .optional()
     .description("User ID of who deleted the record.")
     .version("1.0")
@@ -97,6 +101,7 @@ export const baseEntityShape: SchemaShape = {
 
   deletedReason: field
     .string()
+    .internal()
     .optional()
     .description("Reason the record was deleted.")
     .version("1.0")
