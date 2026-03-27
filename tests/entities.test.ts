@@ -5,6 +5,8 @@ import {
   roleEntitySchema,
   permissionsEntitySchema,
   assetEntitySchema,
+  PROFILE_DEFAULT_PROFANITY_LOCALE,
+  PROFILE_PROFANITY_SUPPORTED_LOCALES,
   PreferredDisplayOrder,
   Role,
   Scope,
@@ -163,6 +165,136 @@ describe("userEntitySchema", () => {
         expect.objectContaining({
           field: "name.firstName",
           code: "name.firstName.required",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects editable profile fields that exceed the supported length", () => {
+    const result = validateEditableUserProfile({
+      ...baseUser,
+      name: {
+        ...baseUser.name,
+        firstName: "A".repeat(65),
+      },
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "name.firstName",
+          code: "name.firstName.too_long",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects unsupported characters in profile name fields", () => {
+    const result = validateEditableUserProfile({
+      ...baseUser,
+      name: {
+        ...baseUser.name,
+        lastName: "Lovelace!",
+      },
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "name.lastName",
+          code: "name.lastName.invalid_format",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects invalid editable profile email addresses", () => {
+    const result = validateEditableUserProfile({
+      ...baseUser,
+      email: "alice-at-example.com",
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "email",
+          code: "email.invalid_format",
+        }),
+      ]),
+    );
+  });
+
+  it("exports the default profanity locale in the supported locale list", () => {
+    expect(PROFILE_DEFAULT_PROFANITY_LOCALE).toBe("en");
+    expect(PROFILE_PROFANITY_SUPPORTED_LOCALES).toContain(PROFILE_DEFAULT_PROFANITY_LOCALE);
+  });
+
+  it("maps legacy validation errors and preserves non-field form errors", () => {
+    const mapped = mapEditableUserProfileValidationErrors({
+      issues: [
+        {
+          path: "profile",
+          code: "profile.invalid",
+          message: "Profile request is invalid.",
+        },
+        {
+          path: "name.displayName",
+          code: "name.displayName.profanity",
+          message: "Display name contains blocked language.",
+        },
+      ],
+      errors: [
+        "Display name contains blocked language.",
+        "Missing required field: name.lastName",
+        "Field is immutable: email",
+        "Field must be a string: emailPreferences",
+        "Unsupported profile payload: profile",
+      ],
+    });
+
+    expect(mapped.fieldErrors["name.displayName"]).toBe("Display name contains blocked language.");
+    expect(mapped.fieldErrors["name.lastName"]).toBe("Last name is required.");
+    expect(mapped.fieldErrors.email).toBe("Email cannot be changed.");
+    expect(mapped.fieldErrors.emailPreferences).toBe("Field must be a string: emailPreferences");
+    expect(mapped.formErrors).toEqual([
+      "Profile request is invalid.",
+      "Unsupported profile payload: profile",
+    ]);
+    expect(mapped.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "name.lastName",
+          code: "name.lastName.required",
+        }),
+        expect.objectContaining({
+          field: "email",
+          code: "email.immutable",
+        }),
+        expect.objectContaining({
+          field: "emailPreferences",
+          code: "emailPreferences.invalid_type",
+        }),
+      ]),
+    );
+  });
+
+  it("maps unclassified field errors into deterministic invalid-value issues", () => {
+    const mapped = mapEditableUserProfileValidationErrors({
+      issues: [],
+      errors: ["Unsupported preference selection: emailPreferences"],
+    });
+
+    expect(mapped.fieldErrors.emailPreferences).toBe(
+      "Unsupported preference selection: emailPreferences",
+    );
+    expect(mapped.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "emailPreferences",
+          code: "emailPreferences.invalid_value",
         }),
       ]),
     );
