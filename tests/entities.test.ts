@@ -9,7 +9,9 @@ import {
   Role,
   Scope,
   EntityTypes,
+  mapEditableUserProfileValidationErrors,
   userAvatarSchema,
+  validateEditableUserProfile,
 } from "../src/index.js";
 
 const now = new Date("2025-01-02T00:00:00Z").toISOString();
@@ -110,6 +112,60 @@ describe("userEntitySchema", () => {
       email: "not-an-email",
     });
     expect(result.valid).toBe(false);
+  });
+
+  it("reports structured profanity validation issues for editable profile fields", () => {
+    const result = validateEditableUserProfile({
+      ...baseUser,
+      name: {
+        ...baseUser.name,
+        displayName: "Alice Fuck",
+      },
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "name.displayName",
+          code: "name.displayName.profanity",
+        }),
+      ]),
+    );
+  });
+
+  it("allows optional middle-name fields to be cleared without failing validation", () => {
+    const result = validateEditableUserProfile({
+      ...baseUser,
+      name: {
+        ...baseUser.name,
+        middleName: "",
+      },
+    });
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("maps editable profile validation issues into deterministic field errors", () => {
+    const validation = validateEditableUserProfile({
+      ...baseUser,
+      name: {
+        ...baseUser.name,
+        firstName: "",
+      },
+    });
+
+    const mapped = mapEditableUserProfileValidationErrors(validation);
+
+    expect(mapped.fieldErrors["name.firstName"]).toBe("First name is required.");
+    expect(mapped.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "name.firstName",
+          code: "name.firstName.required",
+        }),
+      ]),
+    );
   });
 });
 

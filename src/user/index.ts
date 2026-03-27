@@ -27,3 +27,14 @@ export {
 } from "./user.avatar.js";
 
 export { type UserName, userNameSchema } from "./user.name.js";
+export {
+  PROFILE_DEFAULT_PROFANITY_LOCALE,
+  PROFILE_PROFANITY_SUPPORTED_LOCALES,
+  editableUserProfileSchema,
+  type EditableUserProfileFieldErrors,
+  type EditableUserProfileFieldName,
+  type EditableUserProfileValidationIssue,
+  type EditableUserProfile,
+  mapEditableUserProfileValidationErrors,
+  validateEditableUserProfile,
+} from "./profile.validation.js";
