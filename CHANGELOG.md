@@ -21,6 +21,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 - **Security**
   - (placeholder)
 
+## [1.0.13] - 2026-03-27
+
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
 ## [1.0.12] - 2026-03-09
 
 - **Added**
@@ -173,3 +187,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.7]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.7
 [1.0.11]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.11
 [1.0.12]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.12
+[1.0.13]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.13
