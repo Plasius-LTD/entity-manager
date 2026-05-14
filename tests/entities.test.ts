@@ -7,10 +7,12 @@ import {
   assetEntitySchema,
   PROFILE_DEFAULT_PROFANITY_LOCALE,
   PROFILE_PROFANITY_SUPPORTED_LOCALES,
+  ComponentTypes,
   PreferredDisplayOrder,
   Role,
   Scope,
   EntityTypes,
+  objectAssetEntitySchema,
   mapEditableUserProfileValidationErrors,
   userAvatarSchema,
   validateEditableUserProfile,
@@ -435,5 +437,35 @@ describe("asset and avatar schemas", () => {
       height: 64,
       createdAt: now,
     });
+  });
+
+  it("validates a complete object asset payload", () => {
+    const result = objectAssetEntitySchema.validate({
+      type: "objectAssetEntity",
+      version: "1.0.0",
+      url: "https://example.com/assets/tree.glb",
+      thumbnailUrl: "https://example.com/assets/tree-thumb.png",
+      format: "gltf",
+      size: 2048,
+      components: [
+        {
+          type: ComponentTypes.PHYSICS,
+          config: { mass: 10 },
+        },
+      ],
+    });
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects invalid object asset payloads", () => {
+    const result = objectAssetEntitySchema.validate({
+      type: "objectAssetEntity",
+      version: "1.0.0",
+      url: "https://example.com/assets/tree.glb",
+      components: [{ type: "unsupported", config: {} }],
+    });
+
+    expect(result.valid).toBe(false);
   });
 });

@@ -66,6 +66,8 @@ if (!result.valid) {
 
 ### Assets
 - `assetEntitySchema`, `imageAssetEntitySchema`, `audioAssetEntitySchema`, `modelAssetEntitySchema`, `objectAssetEntitySchema`
+
+`objectAssetEntitySchema` includes object-specific fields for payload URL, optional thumbnail, optional format/size, and component wiring.
 - Enums: `AudioChannel`, `ModelAssetFormat`
 
 ### Components
