@@ -10,7 +10,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Completed `objectAssetEntitySchema` with concrete object asset metadata fields and component attachments.
 
 - **Changed**
   - (placeholder)
