@@ -50,6 +50,30 @@ if (!result.valid) {
 }
 ```
 
+### Editable Profile Validation Translations
+
+Editable profile validation issues expose stable field and message keys with
+`en-GB` defaults resolved through `@plasius/translations`.
+
+```ts
+import {
+  editableUserProfileValidationTranslationKeys,
+  mapEditableUserProfileValidationErrors,
+  translateEditableUserProfileValidationText,
+  validateEditableUserProfile,
+} from "@plasius/entity-manager";
+
+const validation = validateEditableUserProfile(profile);
+const mapped = mapEditableUserProfileValidationErrors(validation);
+
+const message = translateEditableUserProfileValidationText(
+  editableUserProfileValidationTranslationKeys.required,
+  { field: "First name" },
+);
+
+console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
+```
+
 ---
 
 ## Export Overview
@@ -61,6 +85,11 @@ if (!result.valid) {
 
 ### User and permissions
 - `userEntitySchema`, `userNameSchema`, `userAvatarSchema`
+- Editable profile validation helpers and translation keys:
+  `validateEditableUserProfile`, `mapEditableUserProfileValidationErrors`,
+  `editableUserProfileFieldTranslationKeys`,
+  `editableUserProfileValidationTranslationKeys`,
+  `entityManagerEnGbTranslations`, `translateEditableUserProfileValidationText`
 - `settingsEntitySchema`, `permissionsEntitySchema`, `featureFlagEntitySchema`, `roleEntitySchema`
 - Enums: `PreferredDisplayOrder`, `UserEmailPreferences`, `UserNotificationPreferences`, `Role`, `Scope`
 
