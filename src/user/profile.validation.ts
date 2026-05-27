@@ -10,6 +10,14 @@ import {
 } from "@plasius/schema";
 import { UserEmailPreferences } from "./user.entity.js";
 import { PreferredDisplayOrder } from "./user.name.js";
+import {
+  editableUserProfileFieldTranslationKeys,
+  editableUserProfileValidationTranslationKeys,
+  translateEditableUserProfileFieldLabel,
+  translateEditableUserProfileValidationText,
+  type EditableUserProfileFieldTranslationKey,
+  type EditableUserProfileValidationTranslationKey,
+} from "./profile.validation.translations.js";
 
 const PROFILE_PROFANITY_LEXICON = {
   en: [
@@ -49,6 +57,8 @@ export type EditableUserProfileFieldErrors = Partial<
 
 export interface EditableUserProfileValidationIssue extends ValidationIssue {
   field?: EditableUserProfileFieldName;
+  fieldKey?: EditableUserProfileFieldTranslationKey;
+  messageKey?: EditableUserProfileValidationTranslationKey;
 }
 
 const EDITABLE_PROFILE_FIELD_NAMES = new Set<EditableUserProfileFieldName>([
@@ -61,33 +71,28 @@ const EDITABLE_PROFILE_FIELD_NAMES = new Set<EditableUserProfileFieldName>([
   "emailPreferences",
 ]);
 
-const EDITABLE_PROFILE_FIELD_LABELS: Record<EditableUserProfileFieldName, string> = {
-  "name.firstName": "First name",
-  "name.middleName": "Middle name",
-  "name.lastName": "Last name",
-  "name.displayName": "Display name",
-  "name.preferredDisplayOrder": "Preferred name display",
-  email: "Email",
-  emailPreferences: "Email preferences",
-};
-
 type ProfileTextFieldRule = {
-  path: string;
-  label: string;
+  field: EditableUserProfileFieldName;
   maxLength: number;
   required: boolean;
   format: "name" | "email";
 };
 
 function toIssue(
-  path: string,
+  fieldName: EditableUserProfileFieldName,
   code: string,
-  message: string,
+  messageKey: EditableUserProfileValidationTranslationKey,
+  args: Record<string, string | number | boolean> = {},
 ): ValidationIssueInput {
+  const fieldLabel = translateEditableUserProfileFieldLabel(fieldName);
+
   return {
-    path,
+    path: fieldName,
     code,
-    message,
+    message: translateEditableUserProfileValidationText(messageKey, {
+      field: fieldLabel,
+      ...args,
+    }),
   };
 }
 
@@ -123,24 +128,36 @@ function createLegacyIssueFromError(
   if (error.startsWith("Missing required field:")) {
     return {
       field,
+      fieldKey: editableUserProfileFieldTranslationKeys[field],
+      messageKey: editableUserProfileValidationTranslationKeys.required,
       path: field,
       code: `${field}.required`,
-      message: `${EDITABLE_PROFILE_FIELD_LABELS[field]} is required.`,
+      message: translateEditableUserProfileValidationText(
+        editableUserProfileValidationTranslationKeys.required,
+        { field: translateEditableUserProfileFieldLabel(field) },
+      ),
     };
   }
 
   if (error.startsWith("Field is immutable:")) {
     return {
       field,
+      fieldKey: editableUserProfileFieldTranslationKeys[field],
+      messageKey: editableUserProfileValidationTranslationKeys.immutable,
       path: field,
       code: `${field}.immutable`,
-      message: `${EDITABLE_PROFILE_FIELD_LABELS[field]} cannot be changed.`,
+      message: translateEditableUserProfileValidationText(
+        editableUserProfileValidationTranslationKeys.immutable,
+        { field: translateEditableUserProfileFieldLabel(field) },
+      ),
     };
   }
 
   if (error.startsWith("Field ")) {
     return {
       field,
+      fieldKey: editableUserProfileFieldTranslationKeys[field],
+      messageKey: editableUserProfileValidationTranslationKeys.invalidType,
       path: field,
       code: `${field}.invalid_type`,
       message: error,
@@ -149,10 +166,43 @@ function createLegacyIssueFromError(
 
   return {
     field,
+    fieldKey: editableUserProfileFieldTranslationKeys[field],
+    messageKey: editableUserProfileValidationTranslationKeys.invalidValue,
     path: field,
     code: `${field}.invalid_value`,
     message: error,
   };
+}
+
+function messageKeyForProfileValidationIssue(
+  field: EditableUserProfileFieldName | undefined,
+  code: string,
+): EditableUserProfileValidationTranslationKey | undefined {
+  if (code.endsWith(".required")) {
+    return editableUserProfileValidationTranslationKeys.required;
+  }
+  if (code.endsWith(".immutable")) {
+    return editableUserProfileValidationTranslationKeys.immutable;
+  }
+  if (code.endsWith(".invalid_type")) {
+    return editableUserProfileValidationTranslationKeys.invalidType;
+  }
+  if (code.endsWith(".invalid_value")) {
+    return editableUserProfileValidationTranslationKeys.invalidValue;
+  }
+  if (code.endsWith(".too_long")) {
+    return editableUserProfileValidationTranslationKeys.tooLong;
+  }
+  if (code.endsWith(".invalid_format")) {
+    return field === "email"
+      ? editableUserProfileValidationTranslationKeys.emailInvalid
+      : editableUserProfileValidationTranslationKeys.nameUnsupportedCharacters;
+  }
+  if (code.endsWith(".profanity")) {
+    return editableUserProfileValidationTranslationKeys.profanity;
+  }
+
+  return undefined;
 }
 
 function normalizeValidationIssue(
@@ -161,10 +211,13 @@ function normalizeValidationIssue(
   const field = isEditableUserProfileFieldName(issue.path)
     ? issue.path
     : undefined;
+  const messageKey = messageKeyForProfileValidationIssue(field, issue.code);
 
   return {
     ...issue,
     field,
+    fieldKey: field ? editableUserProfileFieldTranslationKeys[field] : undefined,
+    messageKey,
   };
 }
 
@@ -198,42 +251,43 @@ function validateProfileTextField(
     }
 
     return toIssue(
-      rule.path,
-      `${rule.path}.required`,
-      `${rule.label} is required.`,
+      rule.field,
+      `${rule.field}.required`,
+      editableUserProfileValidationTranslationKeys.required,
     );
   }
 
   if (normalizedValue.length > rule.maxLength) {
     return toIssue(
-      rule.path,
-      `${rule.path}.too_long`,
-      `${rule.label} must be ${rule.maxLength} characters or fewer.`,
+      rule.field,
+      `${rule.field}.too_long`,
+      editableUserProfileValidationTranslationKeys.tooLong,
+      { maxLength: rule.maxLength },
     );
   }
 
   if (rule.format === "name" && !validateName(normalizedValue)) {
     return toIssue(
-      rule.path,
-      `${rule.path}.invalid_format`,
-      `${rule.label} contains unsupported characters.`,
+      rule.field,
+      `${rule.field}.invalid_format`,
+      editableUserProfileValidationTranslationKeys.nameUnsupportedCharacters,
     );
   }
 
   if (rule.format === "email" && !validateEmail(normalizedValue)) {
     return toIssue(
-      rule.path,
-      `${rule.path}.invalid_format`,
-      `${rule.label} must be a valid email address.`,
+      rule.field,
+      `${rule.field}.invalid_format`,
+      editableUserProfileValidationTranslationKeys.emailInvalid,
     );
   }
 
   const profanityToken = findProfanityMatch(normalizedValue, PROFILE_DEFAULT_PROFANITY_LOCALE);
   if (profanityToken) {
     return toIssue(
-      rule.path,
-      `${rule.path}.profanity`,
-      `${rule.label} contains blocked language.`,
+      rule.field,
+      `${rule.field}.profanity`,
+      editableUserProfileValidationTranslationKeys.profanity,
     );
   }
 
@@ -245,8 +299,7 @@ export const editableProfileNameShape = {
     .string()
     .validator((value) =>
       validateProfileTextField(value, {
-        path: "name.firstName",
-        label: "First name",
+        field: "name.firstName",
         maxLength: 64,
         required: true,
         format: "name",
@@ -258,8 +311,7 @@ export const editableProfileNameShape = {
     .optional()
     .validator((value) =>
       validateProfileTextField(value, {
-        path: "name.middleName",
-        label: "Middle name",
+        field: "name.middleName",
         maxLength: 64,
         required: false,
         format: "name",
@@ -270,8 +322,7 @@ export const editableProfileNameShape = {
     .string()
     .validator((value) =>
       validateProfileTextField(value, {
-        path: "name.lastName",
-        label: "Last name",
+        field: "name.lastName",
         maxLength: 64,
         required: true,
         format: "name",
@@ -282,8 +333,7 @@ export const editableProfileNameShape = {
     .string()
     .validator((value) =>
       validateProfileTextField(value, {
-        path: "name.displayName",
-        label: "Display name",
+        field: "name.displayName",
         maxLength: 80,
         required: true,
         format: "name",
@@ -301,8 +351,7 @@ export const editableUserProfileSchema = createSchema(
       .string()
       .validator((value) =>
         validateProfileTextField(value, {
-          path: "email",
-          label: "Email",
+          field: "email",
           maxLength: 254,
           required: true,
           format: "email",
@@ -375,8 +424,6 @@ export function mapEditableUserProfileValidationErrors(
     issues.push(issue);
     if (issue.field) {
       fieldErrors[issue.field] ??= issue.message;
-    } else {
-      formErrors.push(issue.message);
     }
   }
 

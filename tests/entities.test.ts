@@ -12,8 +12,13 @@ import {
   Role,
   Scope,
   EntityTypes,
+  editableUserProfileFieldTranslationKeys,
+  editableUserProfileValidationTranslationKeys,
+  entityManagerEnGbTranslations,
   objectAssetEntitySchema,
   mapEditableUserProfileValidationErrors,
+  translateEditableUserProfileFieldLabel,
+  translateEditableUserProfileValidationText,
   userAvatarSchema,
   validateEditableUserProfile,
 } from "../src/index.js";
@@ -136,6 +141,18 @@ describe("userEntitySchema", () => {
         }),
       ]),
     );
+
+    const mapped = mapEditableUserProfileValidationErrors(result);
+    expect(mapped.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "name.displayName",
+          fieldKey: editableUserProfileFieldTranslationKeys["name.displayName"],
+          code: "name.displayName.profanity",
+          messageKey: editableUserProfileValidationTranslationKeys.profanity,
+        }),
+      ]),
+    );
   });
 
   it("allows optional middle-name fields to be cleared without failing validation", () => {
@@ -166,10 +183,43 @@ describe("userEntitySchema", () => {
       expect.arrayContaining([
         expect.objectContaining({
           field: "name.firstName",
+          fieldKey: editableUserProfileFieldTranslationKeys["name.firstName"],
           code: "name.firstName.required",
+          messageKey: editableUserProfileValidationTranslationKeys.required,
         }),
       ]),
     );
+  });
+
+  it("exports editable profile translation keys and en-GB defaults", () => {
+    expect(
+      entityManagerEnGbTranslations[
+        editableUserProfileFieldTranslationKeys["name.displayName"]
+      ],
+    ).toBe("Display name");
+    expect(translateEditableUserProfileFieldLabel("name.firstName")).toBe("First name");
+    expect(
+      translateEditableUserProfileValidationText(
+        editableUserProfileValidationTranslationKeys.tooLong,
+        { field: "First name", maxLength: 64 },
+      ),
+    ).toBe("First name must be 64 characters or fewer.");
+  });
+
+  it("falls back to package translations when a supplied profile translator misses", () => {
+    expect(
+      translateEditableUserProfileValidationText(
+        editableUserProfileValidationTranslationKeys.required,
+        { field: "First name" },
+        (key) => key,
+      ),
+    ).toBe("First name is required.");
+    expect(
+      translateEditableUserProfileFieldLabel(
+        "email",
+        (key) => (key === editableUserProfileFieldTranslationKeys.email ? "Courriel" : key),
+      ),
+    ).toBe("Courriel");
   });
 
   it("rejects editable profile fields that exceed the supported length", () => {
@@ -187,6 +237,18 @@ describe("userEntitySchema", () => {
         expect.objectContaining({
           path: "name.firstName",
           code: "name.firstName.too_long",
+        }),
+      ]),
+    );
+
+    const mapped = mapEditableUserProfileValidationErrors(result);
+    expect(mapped.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "name.firstName",
+          fieldKey: editableUserProfileFieldTranslationKeys["name.firstName"],
+          code: "name.firstName.too_long",
+          messageKey: editableUserProfileValidationTranslationKeys.tooLong,
         }),
       ]),
     );
@@ -210,6 +272,18 @@ describe("userEntitySchema", () => {
         }),
       ]),
     );
+
+    const mapped = mapEditableUserProfileValidationErrors(result);
+    expect(mapped.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "name.lastName",
+          fieldKey: editableUserProfileFieldTranslationKeys["name.lastName"],
+          code: "name.lastName.invalid_format",
+          messageKey: editableUserProfileValidationTranslationKeys.nameUnsupportedCharacters,
+        }),
+      ]),
+    );
   });
 
   it("rejects invalid editable profile email addresses", () => {
@@ -224,6 +298,18 @@ describe("userEntitySchema", () => {
         expect.objectContaining({
           path: "email",
           code: "email.invalid_format",
+        }),
+      ]),
+    );
+
+    const mapped = mapEditableUserProfileValidationErrors(result);
+    expect(mapped.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "email",
+          fieldKey: editableUserProfileFieldTranslationKeys.email,
+          code: "email.invalid_format",
+          messageKey: editableUserProfileValidationTranslationKeys.emailInvalid,
         }),
       ]),
     );
@@ -269,15 +355,21 @@ describe("userEntitySchema", () => {
       expect.arrayContaining([
         expect.objectContaining({
           field: "name.lastName",
+          fieldKey: editableUserProfileFieldTranslationKeys["name.lastName"],
           code: "name.lastName.required",
+          messageKey: editableUserProfileValidationTranslationKeys.required,
         }),
         expect.objectContaining({
           field: "email",
+          fieldKey: editableUserProfileFieldTranslationKeys.email,
           code: "email.immutable",
+          messageKey: editableUserProfileValidationTranslationKeys.immutable,
         }),
         expect.objectContaining({
           field: "emailPreferences",
+          fieldKey: editableUserProfileFieldTranslationKeys.emailPreferences,
           code: "emailPreferences.invalid_type",
+          messageKey: editableUserProfileValidationTranslationKeys.invalidType,
         }),
       ]),
     );
@@ -297,6 +389,53 @@ describe("userEntitySchema", () => {
         expect.objectContaining({
           field: "emailPreferences",
           code: "emailPreferences.invalid_value",
+          fieldKey: editableUserProfileFieldTranslationKeys.emailPreferences,
+          messageKey: editableUserProfileValidationTranslationKeys.invalidValue,
+        }),
+      ]),
+    );
+  });
+
+  it("decorates existing immutable, type, and value issue codes with translation keys", () => {
+    const mapped = mapEditableUserProfileValidationErrors({
+      issues: [
+        {
+          path: "email",
+          code: "email.immutable",
+          message: "Email cannot be changed.",
+        },
+        {
+          path: "emailPreferences",
+          code: "emailPreferences.invalid_type",
+          message: "Email preferences has an invalid type.",
+        },
+        {
+          path: "emailPreferences",
+          code: "emailPreferences.invalid_value",
+          message: "Email preferences has an invalid value.",
+        },
+      ],
+      errors: [],
+    });
+
+    expect(mapped.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "email",
+          fieldKey: editableUserProfileFieldTranslationKeys.email,
+          messageKey: editableUserProfileValidationTranslationKeys.immutable,
+        }),
+        expect.objectContaining({
+          field: "emailPreferences",
+          fieldKey: editableUserProfileFieldTranslationKeys.emailPreferences,
+          code: "emailPreferences.invalid_type",
+          messageKey: editableUserProfileValidationTranslationKeys.invalidType,
+        }),
+        expect.objectContaining({
+          field: "emailPreferences",
+          fieldKey: editableUserProfileFieldTranslationKeys.emailPreferences,
+          code: "emailPreferences.invalid_value",
+          messageKey: editableUserProfileValidationTranslationKeys.invalidValue,
         }),
       ]),
     );

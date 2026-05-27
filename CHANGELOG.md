@@ -10,10 +10,10 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Added editable profile validation translation keys, `en-GB` defaults, and helper exports backed by `@plasius/translations`.
 
 - **Changed**
-  - (placeholder)
+  - Editable profile validation messages now resolve default English text through the package translation dictionary while preserving existing message strings.
 
 - **Fixed**
   - (placeholder)
