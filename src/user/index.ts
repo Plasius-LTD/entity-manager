@@ -38,3 +38,4 @@ export {
   mapEditableUserProfileValidationErrors,
   validateEditableUserProfile,
 } from "./profile.validation.js";
+export * from "./profile.validation.translations.js";
