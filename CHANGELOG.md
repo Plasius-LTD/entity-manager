@@ -16,6 +16,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Editable profile validation messages now resolve default English text through the package translation dictionary while preserving existing message strings.
 
 - **Fixed**
+  - Restored the package CD workflow so protected `main` releases are prepared by PR and published without direct branch pushes.
   - (placeholder)
 
 - **Security**
