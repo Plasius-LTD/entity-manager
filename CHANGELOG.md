@@ -10,6 +10,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.0.20] - 2026-06-22
+
+- **Added**
   - Added editable profile validation translation keys, `en-GB` defaults, and helper exports backed by `@plasius/translations`.
 
 - **Changed**
@@ -250,3 +264,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.15]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.15
 [1.0.16]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.16
 [1.0.17]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.17
+[1.0.20]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.20
