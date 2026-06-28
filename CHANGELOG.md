@@ -13,6 +13,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.0.22] - 2026-06-28
+
+- **Added**
+  - (placeholder)
+
+- **Changed**
   - Refreshed the published `@plasius/schema`, `@plasius/translations`, and `react` dependencies to their latest released versions.
   - (placeholder)
 
@@ -281,3 +295,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.17]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.17
 [1.0.20]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.20
 [1.0.21]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.21
+[1.0.22]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.22
