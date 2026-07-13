@@ -14,6 +14,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Changed**
   - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.0.23] - 2026-07-13
+
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
   - Consume the RFC-remediated `@plasius/schema` and `@plasius/translations` releases (task #32).
 
 - **Fixed**
@@ -297,3 +311,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.20]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.20
 [1.0.21]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.21
 [1.0.22]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.22
+[1.0.23]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.23
