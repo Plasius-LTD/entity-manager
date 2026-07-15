@@ -32,6 +32,10 @@ export default [
     rules: {
       ...tseslint.configs.recommended.rules,
       "no-undef": "off",
+      "no-redeclare": "off",
+      // TypeScript has separate value/type namespaces; the compiler still
+      // rejects unsafe redeclarations while allowing `const X` + `type X`.
+      "@typescript-eslint/no-redeclare": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",
         {

@@ -105,6 +105,21 @@ console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
 
 ### Auth and translations
 - `authenticatedUserSchema`, `AuthProvider`
+- Family identity contracts:
+  `ageAssuranceEvidenceSchema`, `managedChildProfileSchema`,
+  `actorSubjectPrincipalSchema`, `householdIdentitySchema`,
+  `householdGuardianBoundarySchema`, `guardianRoleAssignmentSchema`,
+  `guardianRelationshipSchema`, and `guardianInvitationSchema`
+- Family identity runtime constants and corresponding literal-union types:
+  `AgeBand`, `AgeAssuranceLevel`, `AgeAssuranceMethod`,
+  `PrincipalAccountType`, `PrincipalType`, and `GuardianRoleAssignmentKind`
+- Family identity enums: `ManagedChildLifecycleState`, `GuardianRole`,
+  `GuardianRoleAssignmentStatus`,
+  `GuardianRelationshipStatus`, `GuardianInvitationKind`, and
+  `GuardianInvitationStatus`
+- Family identity validators: `validateAgeAssuranceEvidence`,
+  `validatePublicAgeAssuranceEvidence`, and
+  `validateHouseholdGuardianBoundary`
 - `translatableSchema`, `supportedLanguagesSchema`
 
 ### Validators and utilities
@@ -135,6 +150,120 @@ const payload = baseEntitySchema.serialize({
 // partitionKey and createdBy are omitted from the serialized payload.
 console.log(payload);
 ```
+
+## Family identity and delegated sessions
+
+Managed-child profiles are separate from `UserEntity`. They have their own
+stable account ID and display name, but deliberately do not contain an email,
+exact date of birth, guardian contact data, payment data, or Token balances.
+The existing `UserEntity` email requirement is unchanged.
+
+Age assurance is represented using a derived `AgeBand` plus minimal assurance
+evidence. The optional `evidenceRef` is marked internal and is omitted by
+default serialization. `ageAssuranceEvidenceSchema` and
+`validateAgeAssuranceEvidence` remain strict stored-evidence boundaries and
+require that reference for provider verification. Public actor/subject
+principals use `validatePublicAgeAssuranceEvidence`, which permits only the
+intentional absence of that protected reference so serialized principals can
+be validated again without weakening stored evidence.
+
+```ts
+import {
+  AgeAssuranceLevel,
+  AgeAssuranceMethod,
+  AgeBand,
+  ManagedChildLifecycleState,
+  managedChildProfileSchema,
+} from "@plasius/entity-manager";
+
+const child = managedChildProfileSchema.validate({
+  type: "managedChildProfile",
+  version: "1.0.0",
+  accountId: "managed-child-001",
+  displayName: "Moon Explorer",
+  ageBand: AgeBand.SIX_TO_NINE,
+  assurance: {
+    level: AgeAssuranceLevel.GUARDIAN_ATTESTED,
+    method: AgeAssuranceMethod.GUARDIAN_ATTESTATION,
+    assertedAt: "2025-07-15T09:00:00.000Z",
+  },
+  lifecycleState: ManagedChildLifecycleState.ACTIVE,
+  createdAt: "2025-07-15T09:00:00.000Z",
+  createdByAccountId: "guardian-account-001",
+});
+```
+
+The creating guardian must differ from the managed-child account. Assurance
+must have been asserted and remain unexpired at `createdAt`. A closed profile
+may retain optional claim history only for an adult account and in the order
+`createdAt ≤ claimedAt ≤ closedAt`.
+
+Delegated sessions retain both identities. The guardian remains `actor`; the
+managed child is `subject`. The relationship and authorization version bind the
+session to current family authority. Guardian roles are intentionally not part
+of the child principal and must not be inherited into child authorization.
+
+```ts
+import {
+  AgeAssuranceLevel,
+  AgeAssuranceMethod,
+  AgeBand,
+  PrincipalAccountType,
+  PrincipalType,
+  actorSubjectPrincipalSchema,
+} from "@plasius/entity-manager";
+
+const principal = actorSubjectPrincipalSchema.validate({
+  type: "actorSubjectPrincipal",
+  version: "1.0.0",
+  actor: {
+    accountId: "guardian-account-001",
+    accountType: PrincipalAccountType.USER,
+  },
+  subject: {
+    accountId: "managed-child-001",
+    accountType: PrincipalAccountType.MANAGED_CHILD,
+  },
+  principalType: PrincipalType.GUARDIAN_DELEGATED,
+  relationshipId: "guardian-relationship-001",
+  authorizationVersion: 0,
+  ageBand: AgeBand.SIX_TO_NINE,
+  assurance: {
+    level: AgeAssuranceLevel.GUARDIAN_ATTESTED,
+    method: AgeAssuranceMethod.GUARDIAN_ATTESTATION,
+    assertedAt: "2025-07-15T09:00:00.000Z",
+  },
+  authenticatedAt: "2025-07-15T09:00:00.000Z",
+});
+```
+
+Family timestamps use canonical UTC only: `YYYY-MM-DDTHH:mm:ssZ` or
+`YYYY-MM-DDTHH:mm:ss.sssZ`. Calendar rollovers, offsets, and other fractional
+precision are rejected. Active principals reject future authentication,
+assurance asserted after authentication, and assurance that has already
+expired. Accepted child-link invitations require assurance valid at their
+resolution time.
+
+Family opaque identifiers share the economy contract's ASCII grammar: one to
+128 characters, starting with an alphanumeric character and continuing with
+alphanumerics, `.`, `_`, `:`, or `-`.
+
+`householdIdentitySchema` names the current `hostGuardianAccountId` without
+introducing treasury or payment state. Role assignments distinguish
+`host-guardian` from `co-guardian`; a host assignment always has both child and
+finance management. Validate every proposed complete assignment snapshot with
+`householdGuardianBoundarySchema` in the same transaction. It requires exactly
+one active host matching the household identity, so revoking the last host is
+invalid unless a replacement becomes active atomically. Grant and revocation
+actor IDs remain protected audit fields.
+
+The relationship and invitation schemas also validate explicit guardian roles,
+lifecycle state, expiry ordering, two authenticated approvals for acceptance,
+mandatory resolver audit for every terminal outcome, and safe authorization
+versions. Once both sides approve, only the initiating guardian or invitation
+target may complete acceptance; arbitrary third-party account IDs are rejected.
+APIs must still enforce guardian step-up authentication, atomic writes, and
+current relationship-version freshness.
 
 ---
 

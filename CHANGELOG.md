@@ -10,16 +10,34 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Added versioned derived-age, assurance, managed-child, actor/subject
+    principal, household identity/host boundary, guardian-role, relationship,
+    and two-sided invitation contracts.
 
 - **Changed**
-  - (placeholder)
+  - Family age-assurance, principal, and host-assignment constants now expose
+    assignable literal union types while retaining dot-style runtime members.
+  - Family timestamps now require canonical UTC seconds or millisecond values,
+    and family opaque identifiers align with the economy one-to-128-character
+    ASCII grammar.
+  - The package typecheck gate now includes regression test sources.
 
 - **Fixed**
-  - (placeholder)
+  - Provider-verified actor/subject principals now revalidate after public
+    serialization removes their internal evidence reference, without relaxing
+    the stored assurance schema.
+  - Accepted family invitations may be completed by either authenticated
+    participant while rejecting unrelated resolver accounts.
 
 - **Security**
-  - (placeholder)
+  - Kept raw dates of birth and wallet/payment state out of shared profile
+    schemas, and bound delegated child principals to relationship authorization
+    versions without inheriting guardian roles.
+  - Reject future or temporally invalid active principals, expired assurance at
+    invitation acceptance, last-host removal, and terminal invitations without
+    a resolver audit identity.
+  - Reject self-created managed-child records, assurance invalid at account
+    creation, and closed claim histories with inconsistent lifecycle ordering.
 
 ## [1.0.23] - 2026-07-13
 
