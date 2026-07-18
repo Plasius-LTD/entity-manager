@@ -337,10 +337,13 @@ function validateProfessionalRoleAssignment(
   assignment: ProfessionalRoleAssignment,
 ): boolean {
   if (
-    !isChronologicallyAtOrAfter(
-      assignment.effectiveFrom,
-      assignment.assignedAt,
-    ) ||
+    (assignment.source === ProfessionalRoleAssignmentSource.GROUP_OWNER &&
+      !isOpaqueIdentifier(assignment.groupId)) ||
+    (assignment.source !== ProfessionalRoleAssignmentSource.MIGRATION &&
+      !isChronologicallyAtOrAfter(
+        assignment.effectiveFrom,
+        assignment.assignedAt,
+      )) ||
     (assignment.effectiveUntil !== undefined &&
       !isChronologicallyAfter(
         assignment.effectiveUntil,

@@ -284,6 +284,17 @@ describe("professional role contracts", () => {
       ...activeProfessionalDefinition,
       interfaceKeys: ["admin.platform.owner"],
     }).valid).toBe(false);
+    expect(professionalRoleDefinitionSchema.validate({
+      ...activeProfessionalDefinition,
+      interfaceKeys: undefined,
+    }).valid).toBe(true);
+    expect(professionalRoleDefinitionSchema.validate({
+      ...activeProfessionalDefinition,
+      interfaceKeys: [
+        "game.professional.guild.leader",
+        "game.professional.guild.leader",
+      ],
+    }).valid).toBe(false);
   });
 
   it("validates a world, character, and institution scoped assignment", () => {
@@ -306,6 +317,42 @@ describe("professional role contracts", () => {
     }).valid).toBe(false);
   });
 
+  it("requires a governing group for group-owner delegated assignments", () => {
+    expect(professionalRoleAssignmentSchema.validate({
+      ...activeProfessionalAssignment,
+      source: ProfessionalRoleAssignmentSource.GROUP_OWNER,
+    }).valid).toBe(false);
+    expect(professionalRoleAssignmentSchema.validate({
+      ...activeProfessionalAssignment,
+      source: ProfessionalRoleAssignmentSource.GROUP_OWNER,
+      groupId: "group-guild-001",
+    }).valid).toBe(true);
+  });
+
+  it("retains historical effective dates for migrated assignments", () => {
+    expect(professionalRoleAssignmentSchema.validate({
+      ...activeProfessionalAssignment,
+      source: ProfessionalRoleAssignmentSource.MIGRATION,
+      effectiveFrom: "2025-07-18T09:00:00.000Z",
+    }).valid).toBe(true);
+    expect(professionalRoleAssignmentSchema.validate({
+      ...activeProfessionalAssignment,
+      source: ProfessionalRoleAssignmentSource.MANUAL_ADMIN,
+      effectiveFrom: "2025-07-18T09:00:00.000Z",
+    }).valid).toBe(false);
+  });
+
+  it("requires a future effective-until timestamp", () => {
+    expect(professionalRoleAssignmentSchema.validate({
+      ...activeProfessionalAssignment,
+      effectiveUntil: updatedAt,
+    }).valid).toBe(true);
+    expect(professionalRoleAssignmentSchema.validate({
+      ...activeProfessionalAssignment,
+      effectiveUntil: createdAt,
+    }).valid).toBe(false);
+  });
+
   it("requires complete assignment end provenance", () => {
     expect(professionalRoleAssignmentSchema.validate({
       ...activeProfessionalAssignment,
@@ -320,6 +367,15 @@ describe("professional role contracts", () => {
       ...activeProfessionalAssignment,
       status: ProfessionalRoleAssignmentStatus.ENDED,
       endedAt: updatedAt,
+    }).valid).toBe(false);
+    expect(professionalRoleAssignmentSchema.validate({
+      ...activeProfessionalAssignment,
+      status: ProfessionalRoleAssignmentStatus.ENDED,
+      effectiveFrom: updatedAt,
+      assignedAt: updatedAt,
+      endedAt: createdAt,
+      endedByAccountId: actorAccountId,
+      endReason: "Invalid historical end order.",
     }).valid).toBe(false);
   });
 });
