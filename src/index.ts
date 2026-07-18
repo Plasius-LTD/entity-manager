@@ -12,6 +12,7 @@ export * from "./validators/index.js";
 export * from "./auth/index.js";
 export * from "./translations/index.js";
 export * from "./family/index.js";
+export * from "./governance/index.js";
 
 import { AssetEntity } from "./Entities/asset.entity.js";
 import { AudioAssetEntity } from "./Entities/audio.asset.entity.js";

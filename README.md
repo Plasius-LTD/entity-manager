@@ -93,6 +93,67 @@ console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
 - `settingsEntitySchema`, `permissionsEntitySchema`, `featureFlagEntitySchema`, `roleEntitySchema`
 - Enums: `PreferredDisplayOrder`, `UserEmailPreferences`, `UserNotificationPreferences`, `Role`, `Scope`
 
+### Administrative governance
+
+- Platform security:
+  `platformAuthorityAssignmentSchema`, `PlatformAuthority`,
+  `PlatformAuthorityAssignmentStatus`,
+  `getLegacyPlatformAuthorityPromotions`
+- Groups:
+  `groupDefinitionSchema`, `groupMembershipSchema`,
+  `groupMembershipBoundarySchema`, `GroupMembershipRole`,
+  `validateGroupMembershipBoundary`
+- Professional standing:
+  `professionalRoleCategorySchema`, `professionalRoleDefinitionSchema`,
+  `professionalRoleAssignmentSchema`,
+  `BUILT_IN_PROFESSIONAL_ROLE_CATEGORIES`,
+  `isProfessionalInterfaceKey`
+
+Platform authority, group ownership, and professional standing are deliberately
+separate contracts. The legacy `Role` and `RoleEntity` exports remain unchanged.
+Only `admin` and `service-admin` are migration candidates for
+`platform-owner`; user-admins and moderators are not promoted.
+
+```ts
+import {
+  PlatformAuthority,
+  PlatformAuthorityAssignmentSource,
+  PlatformAuthorityAssignmentStatus,
+  platformAuthorityAssignmentSchema,
+} from "@plasius/entity-manager";
+
+const result = platformAuthorityAssignmentSchema.validate({
+  type: "platformAuthorityAssignment",
+  version: "1.0.0",
+  assignmentId: "authority-assignment-001",
+  identity: {
+    issuer: "https://identity.example.test",
+    subject: "provider-subject-001",
+  },
+  accountId: "account-owner-001",
+  authority: PlatformAuthority.PLATFORM_OWNER,
+  status: PlatformAuthorityAssignmentStatus.ACTIVE,
+  source: PlatformAuthorityAssignmentSource.LEGACY_ADMIN_MIGRATION,
+  revision: 1,
+  lastMutationId: "migration-run-001",
+  assignedAt: "2026-07-18T09:00:00.000Z",
+  assignedByAccountId: "account-admin-001",
+  reason: "Promote an existing full administrator.",
+});
+```
+
+Group and professional-role writes carry a positive `revision` plus an internal
+`lastMutationId` for optimistic concurrency and idempotency. Validate the
+complete proposed `GroupMembershipBoundary` in the same storage transaction to
+prevent removal of the final active owner.
+
+Professional assignments require world, character, and institution scope. An
+optional group identifies a delegated governance boundary. Future interface
+and authority namespace keys must
+start with `game.professional.`; these keys never imply a platform permission
+or Admin capability. Audit actor IDs, OIDC subjects, mutation identifiers, and
+protected reasons are omitted by default public serialization.
+
 ### Assets
 - `assetEntitySchema`, `imageAssetEntitySchema`, `audioAssetEntitySchema`, `modelAssetEntitySchema`, `objectAssetEntitySchema`
 

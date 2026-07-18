@@ -15,6 +15,7 @@ import {
   editableUserProfileFieldTranslationKeys,
   editableUserProfileValidationTranslationKeys,
   entityManagerEnGbTranslations,
+  isValidAzureTableKey,
   objectAssetEntitySchema,
   mapEditableUserProfileValidationErrors,
   translateEditableUserProfileFieldLabel,
@@ -25,6 +26,17 @@ import {
 
 const now = new Date("2025-01-02T00:00:00Z").toISOString();
 const userId = "123456789012345678901";
+
+describe("isValidAzureTableKey", () => {
+  it("accepts bounded keys and rejects empty, oversized, reserved, or padded keys", () => {
+    expect(isValidAzureTableKey("group:moon-guild")).toBe(true);
+    expect(isValidAzureTableKey("")).toBe(false);
+    expect(isValidAzureTableKey("x".repeat(1025))).toBe(false);
+    expect(isValidAzureTableKey("group/moon-guild")).toBe(false);
+    expect(isValidAzureTableKey(" padded")).toBe(false);
+    expect(isValidAzureTableKey(42 as unknown as string)).toBe(false);
+  });
+});
 
 describe("baseEntitySchema", () => {
   const base = {

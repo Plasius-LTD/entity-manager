@@ -4,3 +4,4 @@
 - [ADR-0002: Public Package Governance Baseline](./adr-0002-public-package-governance-baseline.md)
 - [ADR-0003: Internal Entity Field Exposure](./adr-0003-internal-entity-field-exposure.md)
 - [ADR-0004: Managed-child and delegated-principal contracts](./adr-0004-managed-child-and-delegated-principal-contracts.md)
+- [ADR-0005: Separate platform, group, and professional authority contracts](./adr-0005-platform-group-and-professional-authority-contracts.md)
