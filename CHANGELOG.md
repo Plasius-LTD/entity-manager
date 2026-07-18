@@ -11,6 +11,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Added**
   - (placeholder)
+  - Added actor-free packet, report, checkpoint, and safe-reconstruction
+    metadata plus isolated abuse, review-eligibility, and reservation control
+    entities for privacy-safe feedback.
 
 - **Changed**
   - Split package release preparation and publication into separate exact-main
@@ -105,6 +108,17 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     a resolver audit identity.
   - Reject self-created managed-child records, assurance invalid at account
     creation, and closed claim histories with inconsistent lifecycle ordering.
+  - Feedback entity validation now rejects unknown fields, raw account
+    subjects, narrative/network metadata, actor audit IDs, cross-boundary
+    packet correlation, stale revisions, and retention deadlines more than
+    seven days after logical expiry.
+  - Report/checkpoint keys now use purpose-specific canonical UTC grammars;
+    keyed subjects and reservation IDs reject non-canonical base64url aliases;
+    and terminal reservations reject every mutation while permitting exact
+    idempotent replay.
+  - Accepted-bug transitions now reject active-cooldown and non-monotonic
+    updates; reservations start at one attempt and cannot extend their original
+    logical expiry or hard-delete deadline.
 
 ## [1.0.23] - 2026-07-13
 

@@ -83,6 +83,67 @@ console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
 - Required fields include `partitionKey`, `id`, `entityType`, `createdAt`, `createdBy`, and `isDeleted` (plus system `type` and `version`).
 - Persistence-only fields such as `partitionKey`, `createdBy`, `updatedBy`, `deletedBy`, and `deletedReason` are marked internal and are omitted by default when calling `schema.serialize(...)`.
 
+### Privacy-safe feedback entities
+
+- Actor-free content metadata:
+  `systemManagedFeedbackPacketEntitySchema`,
+  `systemManagedFeedbackReportEntitySchema`,
+  `systemManagedFeedbackCheckpointEntitySchema`, and
+  `systemManagedFeedbackReconstructionEntitySchema`
+- Isolated reporter controls:
+  `feedbackAbuseControlEntitySchema`,
+  `feedbackReviewEligibilityEntitySchema`, and
+  `feedbackSubmissionReservationEntitySchema`
+- Closed constants:
+  `FeedbackArtifactKind`, `FeedbackProcessor`,
+  `FeedbackSubmissionKind`, `FeedbackReservationState`,
+  `FEEDBACK_BUG_COOLDOWN_SECONDS`, and `FEEDBACK_REVIEW_DENY_SECONDS`
+
+Feedback content metadata deliberately does not extend `BaseEntity`: system
+artifacts have no `createdBy`, `updatedBy`, or `deletedBy` identity. Reporter
+controls accept only a purpose/version-scoped HMAC token in the form
+`fbs1.<43 canonical unpadded base64url characters>`. Reservation IDs use a
+canonical 22-character encoding of 128 random bits. Validators reject non-zero
+unused pad bits, so one binary token cannot have multiple textual aliases. Raw
+account subjects, narrative, pixels, network metadata, and arbitrary extra
+fields are rejected.
+
+All reporter-control fields are internal, so default serialization exposes no
+pseudonym, reservation, counter, or expiry. Reservation state has no packet ID
+and therefore cannot create a durable join from the pseudonymous control plane
+to identifier-free content.
+
+Mutable controls and checkpoints start at revision zero. Validate updates with
+the current record:
+
+```ts
+const validation = feedbackAbuseControlEntitySchema.validate(next, current);
+```
+
+The next revision must be exactly `current.revision + 1`. Persistence must also
+use an ETag or transactional condition; schema validation is not a substitute
+for an atomic storage write.
+
+Each entity binds a whole-second TTL to `hardDeleteAt`. The deadline must be no
+more than seven days after logical expiry. Writers must update the timestamp,
+TTL, and revision atomically. See
+[ADR-0006](./docs/adrs/adr-0006-feedback-system-and-control-entities.md) and the
+[feedback entity boundary design](./docs/design/feedback-entity-boundaries.md).
+
+The abuse contract validates `5m → 15m → 1h → 6h → 24h` cooldowns and a
+48-hour quiet reset. A subsequent accepted bug requires a strictly later
+timestamp at or after the current cooldown expiry. The review contract
+validates an exact 30-day deny. Reservations must be created as `reserved`
+with exactly one attempt and cannot extend their original logical expiry or
+hard-delete deadline. `committed` and `released` records accept only an exact
+no-op replay.
+
+Report/checkpoint windows use closed purpose-specific UTC keys:
+`hour:YYYY-MM-DDTHH`, `day:YYYY-MM-DD`, or a five-minute
+`reconcile:YYYY-MM-DDTHH:mm` bucket. Checkpoint IDs are exactly
+`checkpoint:<processor>:<windowKey>`. Account-shaped strings, pseudonyms,
+UUIDs, invalid calendar values, and processor/window mismatches are rejected.
+
 ### User and permissions
 - `userEntitySchema`, `userNameSchema`, `userAvatarSchema`
 - Editable profile validation helpers and translation keys:
