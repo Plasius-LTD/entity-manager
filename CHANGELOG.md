@@ -34,6 +34,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     the stored assurance schema.
   - Accepted family invitations may be completed by either authenticated
     participant while rejecting unrelated resolver accounts.
+  - Group-owner professional assignments now require their governing
+    `groupId`, and migrated assignments may retain historical effective dates
+    without falsifying their record timestamp.
 
 - **Security**
   - Kept platform authority, group ownership, and professional standing
@@ -59,7 +62,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Consume the RFC-remediated `@plasius/schema` and `@plasius/translations` releases (task #32).
 
 - **Fixed**
-  - Group-owner professional assignments now require their governing `groupId`, and migrated assignments may retain historical effective dates without falsifying their record timestamp.
+  - (placeholder)
 
 - **Security**
   - (placeholder)
