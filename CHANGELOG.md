@@ -13,6 +13,12 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Added versioned derived-age, assurance, managed-child, actor/subject
     principal, household identity/host boundary, guardian-role, relationship,
     and two-sided invitation contracts.
+  - Added normalized platform-authority assignments, group definitions,
+    versioned member/owner relationships, and final-owner snapshot validation.
+  - Added professional-role category, definition, and world/character/
+    institution-scoped assignment contracts with optional delegated group
+    governance, including product-neutral guild, education, nobility, and
+    divinity seed metadata.
 
 - **Changed**
   - Family age-assurance, principal, and host-assignment constants now expose
@@ -30,6 +36,10 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     participant while rejecting unrelated resolver accounts.
 
 - **Security**
+  - Kept platform authority, group ownership, and professional standing
+    structurally separate; protected immutable identity/audit fields from
+    public serialization and restricted professional interfaces to
+    `game.professional.*`.
   - Kept raw dates of birth and wallet/payment state out of shared profile
     schemas, and bound delegated child principals to relationship authorization
     versions without inheriting guardian roles.
