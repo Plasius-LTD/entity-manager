@@ -272,7 +272,11 @@ export function validateGroupMembershipBoundary(
   for (const membership of boundary.memberships) {
     if (
       membership.groupId !== boundary.groupId ||
-      !groupMembershipSchema.validate(membership).valid ||
+      !groupMembershipSchema.validate({
+        ...membership,
+        type: "groupMembership",
+        version: "1.0.0",
+      }).valid ||
       membershipIds.has(membership.membershipId)
     ) {
       return false;

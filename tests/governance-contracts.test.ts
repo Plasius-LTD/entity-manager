@@ -176,11 +176,16 @@ describe("group governance contracts", () => {
   });
 
   it("protects the final active group owner in aggregate snapshots", () => {
+    const {
+      type: _membershipType,
+      version: _membershipVersion,
+      ...boundaryOwnerMembership
+    } = ownerMembership;
     const boundary = {
       type: "groupMembershipBoundary",
       version: "1.0.0",
       groupId: activeGroupDefinition.groupId,
-      memberships: [ownerMembership],
+      memberships: [boundaryOwnerMembership],
     };
     expect(groupMembershipBoundarySchema.validate(boundary).valid).toBe(true);
     expect(validateGroupMembershipBoundary(boundary)).toBe(true);
