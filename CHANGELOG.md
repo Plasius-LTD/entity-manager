@@ -62,7 +62,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Consume the RFC-remediated `@plasius/schema` and `@plasius/translations` releases (task #32).
 
 - **Fixed**
-  - (placeholder)
+  - Route release preparation through the same configurable trusted self-hosted
+    runner policy as package publication while retaining fork-deny workflow
+    guards for task #35.
 
 - **Security**
   - (placeholder)
