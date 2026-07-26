@@ -32,6 +32,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - The package typecheck gate now includes regression test sources.
 
 - **Fixed**
+  - Preserve guardian-role and group-membership enum narrowing in emitted
+    nested schema declarations so strict downstream TypeScript consumers can
+    validate the public package.
   - Provider-verified actor/subject principals now revalidate after public
     serialization removes their internal evidence reference, without relaxing
     the stored assurance schema.

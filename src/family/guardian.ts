@@ -55,21 +55,24 @@ export const guardianRoleAssignmentShape = {
     .required()
     .version("1.0")
     .description("Whether this assignment is for the host or a co-guardian.")
-    .enum([...Object.values(GuardianRoleAssignmentKind)]),
+    .enum([...Object.values(GuardianRoleAssignmentKind)])
+    .as<GuardianRoleAssignmentKind>(),
 
   role: field
     .string()
     .required()
     .version("1.0")
     .description("Explicit household authority granted to the guardian.")
-    .enum([...Object.values(GuardianRole)]),
+    .enum([...Object.values(GuardianRole)])
+    .as<GuardianRole>(),
 
   status: field
     .string()
     .required()
     .version("1.0")
     .description("Guardian role-assignment lifecycle state.")
-    .enum([...Object.values(GuardianRoleAssignmentStatus)]),
+    .enum([...Object.values(GuardianRoleAssignmentStatus)])
+    .as<GuardianRoleAssignmentStatus>(),
 
   authorizationVersion: field
     .number()

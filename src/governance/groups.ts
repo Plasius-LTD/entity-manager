@@ -136,14 +136,16 @@ export const groupMembershipShape = {
     .required()
     .version("1.0")
     .description("Member or owner relationship within the group.")
-    .enum([...Object.values(GroupMembershipRole)]),
+    .enum([...Object.values(GroupMembershipRole)])
+    .as<GroupMembershipRole>(),
 
   status: field
     .string()
     .required()
     .version("1.0")
     .description("Membership lifecycle state.")
-    .enum([...Object.values(GroupMembershipStatus)]),
+    .enum([...Object.values(GroupMembershipStatus)])
+    .as<GroupMembershipStatus>(),
 
   revision: revisionField(
     "Positive optimistic-concurrency revision for the membership.",
