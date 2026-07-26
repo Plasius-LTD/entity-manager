@@ -10,6 +10,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.0.24] - 2026-07-26
+
+- **Added**
   - Added versioned derived-age, assurance, managed-child, actor/subject
     principal, household identity/host boundary, guardian-role, relationship,
     and two-sided invitation contracts.
@@ -352,3 +366,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.21]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.21
 [1.0.22]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.22
 [1.0.23]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.23
+[1.0.24]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.24
