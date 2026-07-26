@@ -21,6 +21,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     divinity seed metadata.
 
 - **Changed**
+  - Authenticated users may now carry an optional server-issued actor/subject
+    principal while legacy sessions remain valid; the active subject must
+    match `sub` so delegated children cannot inherit guardian authorization.
   - Family age-assurance, principal, and host-assignment constants now expose
     assignable literal union types while retaining dot-style runtime members.
   - Family timestamps now require canonical UTC seconds or millisecond values,
