@@ -39,6 +39,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     without falsifying their record timestamp.
 
 - **Security**
+  - Added fail-closed source and npm-package admission for the administrative contributor registry and pinned the CI/CD runtime to Node.js 24.18.0 LTS.
   - Kept platform authority, group ownership, and professional standing
     structurally separate; protected immutable identity/audit fields from
     public serialization and restricted professional interfaces to
