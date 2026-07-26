@@ -1,4 +1,8 @@
 import { createSchema, field, Infer, SchemaShape } from "@plasius/schema";
+import {
+  actorSubjectPrincipalShape,
+  type ActorSubjectPrincipal,
+} from "../family/principal.js";
 
 export enum AuthProvider {
   GOOGLE = "google",
@@ -52,15 +56,50 @@ export const authenticatedUserShape: SchemaShape = {
     .string()
     .enum([...Object.values(AuthProvider)])
     .description("Authentication provider used by the user"),
+
+  principal: field
+    .object(actorSubjectPrincipalShape)
+    .optional()
+    .version("1.1")
+    .description(
+      "Server-issued actor/subject principal; the active subject must match sub.",
+    )
+    .as<ActorSubjectPrincipal>(),
 };
+
+function validateAuthenticatedUserPrincipal(
+  user: Record<string, unknown>,
+): boolean {
+  if (user.principal === undefined) {
+    return true;
+  }
+
+  if (
+    typeof user.principal !== "object" ||
+    user.principal === null ||
+    Array.isArray(user.principal)
+  ) {
+    return false;
+  }
+
+  const subject = (user.principal as { subject?: unknown }).subject;
+  return (
+    typeof user.sub === "string" &&
+    typeof subject === "object" &&
+    subject !== null &&
+    !Array.isArray(subject) &&
+    (subject as { accountId?: unknown }).accountId === user.sub
+  );
+}
 
 export const authenticatedUserSchema = createSchema(
   authenticatedUserShape,
   "AuthenticatedUser",
   {
-    version: "1.0.0",
+    version: "1.1.0",
     piiEnforcement: "strict",
     table: "authenticatedUsers",
+    schemaValidator: validateAuthenticatedUserPrincipal,
   }
 );
 

@@ -263,6 +263,11 @@ Delegated sessions retain both identities. The guardian remains `actor`; the
 managed child is `subject`. The relationship and authorization version bind the
 session to current family authority. Guardian roles are intentionally not part
 of the child principal and must not be inherited into child authorization.
+`AuthenticatedUser` may carry this principal in its optional `principal`
+field. Legacy sessions remain valid without it. When present, the active
+subject account must equal `AuthenticatedUser.sub`; delegated child mode
+therefore uses the managed-child account as `sub` and retains the guardian only
+as the audit actor.
 
 ```ts
 import {

@@ -38,6 +38,11 @@ managed-child subject, together with the relationship ID, non-negative safe
 integer authorization version, age band, and non-self-asserted assurance. The
 authorization version is intended to invalidate stale delegated sessions.
 Self principals either omit both age band and assurance or provide both.
+`AuthenticatedUser.principal` is additive and optional for legacy
+compatibility. When present, its subject account must equal
+`AuthenticatedUser.sub`. A delegated session therefore uses the managed child
+as the existing authorization subject and retains the guardian only as actor,
+preventing `sub`-scoped code from inheriting guardian roles.
 
 All family timestamps are valid canonical UTC values with seconds or exactly
 millisecond precision. Active principals reject future authentication times,
