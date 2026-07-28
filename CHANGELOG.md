@@ -10,6 +10,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.0.25] - 2026-07-28
+
+- **Added**
   - Added the registration-free `@plasius/entity-manager/permissions` package
     subpath with ESM, CommonJS, and TypeScript declaration outputs.
 
@@ -369,3 +383,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.22]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.22
 [1.0.23]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.23
 [1.0.24]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.24
+[1.0.25]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.25
