@@ -3,10 +3,10 @@ export {
   type SettingsEntity,
 } from "./settings.entity.js";
 export {
-  Scope,
   permissionsEntitySchema,
   type PermissionsEntity,
 } from "./permissions.entity.js";
+export { Scope } from "../permissions.js";
 export { type RoleEntity, Role, roleEntitySchema } from "./role.entity.js";
 export {
   type UserEntity,

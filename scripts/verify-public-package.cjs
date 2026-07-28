@@ -16,6 +16,25 @@ function main() {
   const parsed = parseNpmPackJson(output);
   const files = Array.isArray(parsed) && parsed[0]?.files ? parsed[0].files : [];
   const paths = files.map((entry) => entry.path);
+  const requiredPackageSurfacePaths = [
+    "dist/permissions.cjs",
+    "dist/permissions.d.cts",
+    "dist/permissions.d.ts",
+    "dist/permissions.js",
+  ];
+  const missingPackageSurfacePaths = requiredPackageSurfacePaths.filter(
+    (filePath) => !paths.includes(filePath)
+  );
+
+  if (missingPackageSurfacePaths.length > 0) {
+    console.error(
+      "Public package check failed. Required permission subpath artifacts are missing:"
+    );
+    for (const filePath of missingPackageSurfacePaths) {
+      console.error(`- ${filePath}`);
+    }
+    process.exit(1);
+  }
 
   const forbiddenTarballPathPatterns = [
     {

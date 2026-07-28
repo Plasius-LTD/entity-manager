@@ -93,6 +93,20 @@ console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
 - `settingsEntitySchema`, `permissionsEntitySchema`, `featureFlagEntitySchema`, `roleEntitySchema`
 - Enums: `PreferredDisplayOrder`, `UserEmailPreferences`, `UserNotificationPreferences`, `Role`, `Scope`
 
+Consumers that only need the permission scope contract should use the
+registration-free package subpath:
+
+```ts
+import { Scope } from "@plasius/entity-manager/permissions";
+
+const requiredScope = Scope.VIEW;
+```
+
+The subpath provides ESM, CommonJS, and TypeScript declaration outputs without
+loading `@plasius/schema` or registering entity schemas. The existing
+`Scope` export from `@plasius/entity-manager` remains available and has the
+same enum values.
+
 ### Administrative governance
 
 - Platform security:
