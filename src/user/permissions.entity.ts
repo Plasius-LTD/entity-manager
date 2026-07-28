@@ -2,37 +2,12 @@ import {
   field,
   createSchema,
   validateDateTimeISO,
+  validateUserId,
   type Infer,
   SchemaShape,
 } from "@plasius/schema";
 import { BaseEntity } from "../base.entity.js";
-import { validateUserId } from "@plasius/schema";
-
-export enum Scope {
-  READ = "read",
-  WRITE = "write",
-  DELETE = "delete",
-  CREATE = "create",
-  UPDATE = "update",
-  EXECUTE = "execute",
-  MANAGE = "manage",
-  ADMIN = "admin",
-  VIEW = "view",
-  EDIT = "edit",
-  SHARE = "share",
-  DOWNLOAD = "download",
-  UPLOAD = "upload",
-  PUBLISH = "publish",
-  SUBSCRIBE = "subscribe",
-  UNPUBLISH = "unpublish",
-  UNSUBSCRIBE = "unsubscribe",
-  APPROVE = "approve",
-  REJECT = "reject",
-  ARCHIVE = "archive",
-  RESTORE = "restore",
-  DELETE_PERMANENTLY = "delete_permanently",
-  LIST = "list",
-}
+import { Scope } from "../permissions.js";
 
 const permissionsEntityShape: SchemaShape = {
   scopes: field

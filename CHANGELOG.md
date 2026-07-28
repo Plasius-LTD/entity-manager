@@ -10,10 +10,12 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Added the registration-free `@plasius/entity-manager/permissions` package
+    subpath with ESM, CommonJS, and TypeScript declaration outputs.
 
 - **Changed**
-  - (placeholder)
+  - Moved the canonical `Scope` enum into a side-effect-free module while
+    preserving the existing root export and all enum values.
 
 - **Fixed**
   - (placeholder)

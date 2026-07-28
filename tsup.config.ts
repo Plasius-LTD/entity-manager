@@ -1,7 +1,10 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: {
+    index: "src/index.ts",
+    permissions: "src/permissions.ts",
+  },
   dts: true,
   sourcemap: true,
   clean: true,

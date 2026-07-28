@@ -20,11 +20,20 @@ We will provide `@plasius/entity-manager` with these structural choices:
 - Export strongly typed schemas, enums, and helpers for common entity types.
 - Keep the package open source to enable external integrations and transparency.
 - Publish both ESM and CJS builds with TypeScript types.
+- Keep lightweight contracts that do not require schema registration in
+  registration-free modules and expose documented package subpaths for
+  performance-sensitive consumers. `Scope` is canonical in
+  `@plasius/entity-manager/permissions`; the root entry re-exports it for
+  backward compatibility.
 
 ## Consequences
 
 - **Positive:** Consistent entity definitions, reusable validation logic, and easier integration across projects.
+- **Positive:** Authorization-only consumers can load permission scopes without
+  initializing the full entity schema graph.
 - **Negative:** Requires careful versioning to avoid breaking schema consumers.
+- **Negative:** Every public subpath adds a package-surface compatibility
+  obligation across ESM, CommonJS, and declaration builds.
 - **Neutral:** External consumers can adopt the schemas without adopting the full platform.
 
 ## Alternatives Considered
