@@ -375,6 +375,34 @@ Licensed under the [Apache-2.0 License](./LICENSE).
 CI keeps the administrative contributor registry outside Git and npm package
 artifacts using exact, case-normalised path checks. CI runs on approved
 self-hosted runners. Release preparation and npm publication use GitHub-hosted
-runners with Node.js 24.18.0 LTS. CD remains disabled until the npm trusted
-publisher binding is verified and the legacy token fallback is removed.
+runners with Node.js 24.18.0 LTS.
+
+Package releases start by dispatching `cd.yml` from `main` with the `prepare`
+phase. The workflow lands the version and changelog through a unique,
+non-force-pushed release pull request, waits for the push-triggered `ci.yml` run
+for that exact merge commit, and then dispatches a separate `publish` phase from
+the same `main` SHA. Release phases use a non-replacing concurrency queue so a
+pending exact-SHA publication cannot be displaced by a later dispatch.
+Publication fails closed if the workflow SHA, remote `main`, successful CI
+evidence, package version, release tag, or version-derived prerelease identity
+differs. npm authentication uses the `production` environment's
+workflow-specific OIDC trusted-publisher binding; no long-lived npm write token
+or token fallback is used. The reusable preparation workflow receives only the
+release GitHub App private key rather than inherited organization secrets.
+Dependencies, validation, coverage upload, SBOM generation, and
+`npm pack --ignore-scripts` run in a separate read-only hosted job. The
+production OIDC job downloads the exact package and SBOM artifact IDs, verifies
+both file and GitHub artifact digests plus package identity, and publishes only
+the verified tarball with lifecycle scripts disabled. The optional Codecov step
+runs only after both immutable publication artifacts have been sealed. Before
+GitHub release finalization, the workflow requires npm's published SHA-512
+integrity to match that exact tarball and the version-derived npm distribution
+tag to point at the exact package version; duplicate retries fail closed on
+either mismatch.
+
+CD remains disabled until the npm binding for organization `Plasius-LTD`,
+repository `entity-manager`, workflow `cd.yml`, environment `production`, and
+allowed action `npm publish` has been independently verified. Rollback is to
+disable `cd.yml`; an interrupted unpublished release can be retried with
+`prepare` and `bump: none` after `main` is stable.
 <!-- END PLASIUS RELEASE INTEGRITY -->
