@@ -13,7 +13,10 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Changed**
-  - (placeholder)
+  - Split package release preparation and publication into separate exact-main
+    `cd.yml` runs so the npm provenance commit matches the released source.
+  - Land release metadata through immutable per-attempt pull-request branches
+    and isolate preparation from SHA-bound publication concurrency.
 
 - **Fixed**
   - (placeholder)
@@ -21,6 +24,19 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 - **Security**
   - Clarified that CLA acceptance records remain in access-controlled storage
     outside source control and public release artifacts.
+  - Moved pull-request validation to GitHub-hosted runners while retaining
+    fail-closed same-repository admission and workflow-restricted self-hosted
+    execution for protected `main`.
+  - Replaced the long-lived npm write-token path with workflow-bound OIDC
+    trusted publishing and added repeated exact-SHA successful-main-CI
+    admission before any tag, GitHub release, or npm publication mutation.
+  - Restricted reusable release preparation to its single GitHub App secret and
+    bound prerelease distribution tags to the prepared package version.
+  - Isolated dependency and third-party validation code from the npm OIDC job;
+    publication now consumes a digest-bound tarball with lifecycle scripts
+    disabled.
+  - Bound duplicate-publication recovery and GitHub release finalization to
+    npm's exact SHA-512 package integrity and version-derived distribution tag.
 
 ## [1.0.25] - 2026-07-28
 

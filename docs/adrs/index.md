@@ -5,3 +5,4 @@
 - [ADR-0003: Internal Entity Field Exposure](./adr-0003-internal-entity-field-exposure.md)
 - [ADR-0004: Managed-child and delegated-principal contracts](./adr-0004-managed-child-and-delegated-principal-contracts.md)
 - [ADR-0005: Separate platform, group, and professional authority contracts](./adr-0005-platform-group-and-professional-authority-contracts.md)
+- [ADR-0006: Exact-main OIDC trusted package publishing](./adr-0006-oidc-trusted-package-publishing.md)
