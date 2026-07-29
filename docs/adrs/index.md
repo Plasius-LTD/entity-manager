@@ -6,4 +6,4 @@
 - [ADR-0004: Managed-child and delegated-principal contracts](./adr-0004-managed-child-and-delegated-principal-contracts.md)
 - [ADR-0005: Separate platform, group, and professional authority contracts](./adr-0005-platform-group-and-professional-authority-contracts.md)
 - [ADR-0006: Exact-main OIDC trusted package publishing](./adr-0006-oidc-trusted-package-publishing.md)
-- [ADR-0006: Separate system feedback entities from reporter controls](./adr-0006-feedback-system-and-control-entities.md)
+- [ADR-0007: Separate system feedback entities from reporter controls](./adr-0007-feedback-system-and-control-entities.md)

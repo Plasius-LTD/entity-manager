@@ -1,4 +1,4 @@
-# ADR-0006: Separate system feedback entities from reporter controls
+# ADR-0007: Separate system feedback entities from reporter controls
 
 - Status: Accepted
 - Date: 2026-07-18
