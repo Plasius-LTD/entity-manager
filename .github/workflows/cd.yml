@@ -38,8 +38,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: npm-cd-${{ github.repository }}
-  queue: max
+  group: npm-cd-${{ github.repository }}-${{ inputs.phase == 'publish' && format('publish-{0}', inputs.expected_commit_sha) || 'prepare' }}
   cancel-in-progress: false
 
 jobs:
@@ -69,6 +68,7 @@ jobs:
         with:
           ref: ${{ needs.prepare_release.outputs.commit_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Wait for successful exact-SHA main CI
         env:
@@ -179,6 +179,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Use Node.js 24.18.0
         uses: actions/setup-node@v6
@@ -324,6 +325,13 @@ jobs:
             echo "derived_preid=${DERIVED_PREID}"
             echo "effective_preid=${DERIVED_PREID}"
           } >> "${GITHUB_OUTPUT}"
+
+      - name: Verify private artifact policy
+        run: |
+          set -euo pipefail
+          if node -e "const scripts = require('./package.json').scripts || {}; process.exit(scripts['privacy:check'] ? 0 : 1)"; then
+            npm run privacy:check
+          fi
 
       - name: Install dependencies
         run: npm ci

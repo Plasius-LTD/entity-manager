@@ -381,8 +381,9 @@ Package releases start by dispatching `cd.yml` from `main` with the `prepare`
 phase. The workflow lands the version and changelog through a unique,
 non-force-pushed release pull request, waits for the push-triggered `ci.yml` run
 for that exact merge commit, and then dispatches a separate `publish` phase from
-the same `main` SHA. Release phases use a non-replacing concurrency queue so a
-pending exact-SHA publication cannot be displaced by a later dispatch.
+the same `main` SHA. Preparation is serialized, while publication runs use the
+prepared SHA in their concurrency identity so the self-dispatched publication
+cannot be blocked by the preparation run that created it.
 Publication fails closed if the workflow SHA, remote `main`, successful CI
 evidence, package version, release tag, or version-derived prerelease identity
 differs. npm authentication uses the `production` environment's

@@ -51,11 +51,12 @@ The publication runtime is pinned to Node.js 24.18.0 and must report npm
 11.5.1 or newer. Dependency caching is disabled in privileged release jobs.
 Release tags are immutable: an existing tag must already point at the expected
 SHA, and the workflow never deletes or rewrites a conflicting tag.
-The workflow concurrency group uses GitHub's non-replacing maximum queue so the
-self-dispatched publish run remains pending until its prepare run completes and
-cannot be replaced by a later dispatch. The npm distribution tag and GitHub
-prerelease state are derived from the final `package.json` version and must
-match the preparation hand-off.
+Preparation runs share one non-cancelling concurrency group. Publication runs
+use the prepared SHA in a separate non-cancelling group, allowing the
+self-dispatched publish run to start without waiting behind the preparation
+run that created it while still deduplicating publication attempts for the same
+SHA. The npm distribution tag and GitHub prerelease state are derived from the
+final `package.json` version and must match the preparation hand-off.
 
 The reusable workflow declares only `RELEASE_PREP_APP_PRIVATE_KEY`; the caller
 maps that secret explicitly. Its ordinary `GITHUB_TOKEN` is read-only, while

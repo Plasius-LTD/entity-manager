@@ -24,14 +24,14 @@ describe("workflow trust boundaries", () => {
     expect(releasePrepareWorkflow).toContain("environment: production");
   });
 
-  it("does not expose a self-hosted runner to fork pull requests", () => {
+  it("validates same-repository pull requests without exposing self-hosted runners to forks", () => {
     expect(ciWorkflow).not.toContain("pull_request_target:");
-
-    if (/pull_request:\s*\n/u.test(ciWorkflow)) {
-      expect(ciWorkflow).toContain(
-        "github.event.pull_request.head.repo.full_name == github.repository",
-      );
-    }
+    expect(ciWorkflow).toMatch(/pull_request:\s*\n\s+branches: \[main\]/u);
+    expect(
+      ciWorkflow.match(
+        /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/gu,
+      ),
+    ).toHaveLength(2);
   });
 
   it("keeps production release workflows off pull-request triggers", () => {
@@ -82,9 +82,12 @@ describe("workflow trust boundaries", () => {
     expect(cdWorkflow).toContain("refs/heads/main");
   });
 
-  it("queues release phases without replacing a pending exact-SHA publish", () => {
-    expect(cdWorkflow).toContain("group: npm-cd-${{ github.repository }}");
-    expect(cdWorkflow).toContain("queue: max");
+  it("uses only supported phase-isolated concurrency controls", () => {
+    expect(cdWorkflow).toContain(
+      "group: npm-cd-${{ github.repository }}-${{ inputs.phase == 'publish'",
+    );
+    expect(cdWorkflow).toContain("inputs.expected_commit_sha");
+    expect(cdWorkflow).not.toContain("queue:");
     expect(cdWorkflow).toContain("cancel-in-progress: false");
   });
 

@@ -16,7 +16,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Split package release preparation and publication into separate exact-main
     `cd.yml` runs so the npm provenance commit matches the released source.
   - Land release metadata through immutable per-attempt pull-request branches
-    and preserve every pending release phase in the CD concurrency queue.
+    and isolate preparation from SHA-bound publication concurrency.
 
 - **Fixed**
   - (placeholder)
