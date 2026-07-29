@@ -35,6 +35,11 @@ describe("workflow trust boundaries", () => {
         /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/gu,
       ),
     ).toHaveLength(2);
+    expect(
+      ciWorkflow.match(
+        /runs-on: \$\{\{ fromJSON\(github\.event_name == 'pull_request' && '\["ubuntu-latest"\]' \|\| '\["self-hosted","Linux","X64"\]'\) \}\}/gu,
+      ),
+    ).toHaveLength(2);
   });
 
   it("keeps production release workflows off pull-request triggers", () => {
