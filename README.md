@@ -111,7 +111,8 @@ console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
   `FeedbackSubmissionKind`, `FeedbackReservationState`,
   `FEEDBACK_PROGRESSIVE_COOLDOWN_LADDER_MS`,
   `FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS`,
-  `FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS`,
   `FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS`,
   `FEEDBACK_PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS`, and
   `FEEDBACK_REVIEW_DENY_SECONDS`
@@ -149,17 +150,37 @@ for an atomic storage write.
 The aggregate enforces unique canonical reservation IDs and idempotency
 digests, at most 64 retained records, one active lease, the exact five-minute
 lease, the `5m → 15m → 1h → 6h → 24h` ladder, a 48-hour quiet reset, and seven
-days of post-expiry control retention. A released reservation may become
-committed during reconciliation after immutable acceptance is independently
-verified; this restarts the cooldown without creating a packet/content join.
-Exact cloned replays are accepted without advancing the CAS revision.
+days as the absolute post-expiry privacy deadline. The first six days are the
+live reconciliation interval; the final 24 hours are available only for
+verified purge and expiry of bounded backups. A released reservation may
+become committed during its reconciliation interval after immutable acceptance
+is independently verified; this restarts the cooldown without creating a
+packet/content join. Exact cloned replays are accepted without advancing the
+CAS revision, but neither the submitted nor stored row may contain unknown
+fields.
 
-`state.purgeAfterMs` is the absolute upper-bound deletion deadline and is
-recomputed exactly from every retained record and active cooldown/reset
-horizon. `ttlSeconds` is the floor of the remaining milliseconds so a
-whole-second TTL can delete slightly early but never late. A zero TTL requires
-adapter-managed immediate expiry. Soft-delete, versions, and backups must also
-be absent by `purgeAfterMs`; a database TTL alone is insufficient.
+`state.hardDeleteByMs` is the absolute upper-bound deletion deadline and is
+recomputed as the latest record or active cooldown/reset reconciliation horizon
+plus exactly 24 hours. Each record's `reconciliationUntilMs` is its six-day
+availability cutoff. `ttlSeconds` is the maximum whole-second TTL budget ending
+at the latest reconciliation horizon, one full day before the hard-delete
+deadline. A zero budget is valid only on an empty, inactive delete instruction;
+an active or partially retained aggregate must have a positive budget.
+
+The value is calculated at `writtenAtMs`; it must not be copied directly into
+Cosmos `ttl`, whose clock starts at the database `_ts`. At persistence time an
+adapter must shorten the database TTL using trusted current time, issue a
+delete instead when no positive duration remains, and never persist Cosmos TTL
+zero (where zero is invalid). A purge worker must explicitly delete and verify
+the row during the safety window. Soft-delete, versions, and backups must be
+configured to be absent by `hardDeleteByMs`; a database TTL alone is
+insufficient. This compensates for Cosmos TTL being relative to the last
+database modification and for physical deletion being an asynchronous,
+capacity-dependent background task
+([Azure TTL behaviour](https://learn.microsoft.com/en-us/azure/cosmos-db/time-to-live)).
+The isolated feedback-control boundary therefore requires a restore horizon of
+no more than 24 hours and must not be copied into longer-lived continuous or
+long-term backups.
 
 The earlier per-subject abuse and per-reservation schemas remain exported only
 for source-compatible migration. They cannot atomically enforce aggregate
@@ -167,9 +188,12 @@ capacity or released-to-committed reconciliation and must not be used for new
 writes. Review eligibility remains a separate 30-day overlay and is never
 folded into the bug aggregate.
 
-Other feedback entities bind a whole-second TTL to `hardDeleteAt`. The deadline
-must be no more than seven days after logical expiry. Writers must update the
-timestamp, TTL, and revision atomically. See
+Other pseudonymous control entities use the same 24-hour purge safety window;
+identifier-free artifacts and checkpoints retain an exact whole-second
+lifecycle budget. A control hard-delete deadline must be between one and seven
+days after logical expiry so the safety budget never removes an effective
+cooldown or eligibility overlay. Writers must update the timestamp, TTL budget,
+and revision atomically. See
 [ADR-0006](./docs/adrs/adr-0006-feedback-system-and-control-entities.md) and the
 [feedback entity boundary design](./docs/design/feedback-entity-boundaries.md).
 

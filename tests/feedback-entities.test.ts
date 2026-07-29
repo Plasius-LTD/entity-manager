@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  FEEDBACK_CONTROL_PURGE_SAFETY_SECONDS,
   FeedbackArtifactKind,
   FeedbackProcessor,
   FeedbackReservationState,
@@ -21,6 +22,16 @@ const artifactTtlSeconds =
   (Date.parse(hardDeleteAt) - Date.parse(createdAt)) / 1_000;
 const keyedSubject = `fbs1.${"A".repeat(43)}`;
 const reservationId = `fbr1.${"B".repeat(21)}A`;
+
+function feedbackControlTtlSeconds(
+  writeTimestamp: string,
+  hardDeleteTimestamp: string,
+): number {
+  return (
+    (Date.parse(hardDeleteTimestamp) - Date.parse(writeTimestamp)) / 1_000 -
+    FEEDBACK_CONTROL_PURGE_SAFETY_SECONDS
+  );
+}
 
 describe("actor-free feedback artifacts", () => {
   it("routes content, report, and control records to separate stores", () => {
@@ -331,9 +342,10 @@ describe("actor-free feedback artifacts", () => {
 });
 
 describe("isolated feedback control entities", () => {
-  const controlHardDeleteAt = "2026-07-20T10:05:00.000Z";
+  const controlExpiresAt = "2026-07-20T10:05:00.000Z";
+  const controlHardDeleteAt = "2026-07-21T10:05:00.000Z";
   const controlTtlSeconds =
-    (Date.parse(controlHardDeleteAt) - Date.parse(updatedAt)) / 1_000;
+    feedbackControlTtlSeconds(updatedAt, controlHardDeleteAt);
 
   it("validates an abuse ladder state without account or packet identity", () => {
     const result = feedbackAbuseControlEntitySchema.validate({
@@ -345,7 +357,7 @@ describe("isolated feedback control entities", () => {
       cooldownExpiresAt: "2026-07-18T11:05:00.000Z",
       quietResetExpiresAt: "2026-07-20T10:05:00.000Z",
       updatedAt,
-      expiresAt: controlHardDeleteAt,
+      expiresAt: controlExpiresAt,
       hardDeleteAt: controlHardDeleteAt,
       ttlSeconds: controlTtlSeconds,
       revision: 0,
@@ -367,7 +379,7 @@ describe("isolated feedback control entities", () => {
         cooldownExpiresAt: "2026-07-18T10:10:00.000Z",
         quietResetExpiresAt: "2026-07-20T10:05:00.000Z",
         updatedAt,
-        expiresAt: controlHardDeleteAt,
+        expiresAt: controlExpiresAt,
         hardDeleteAt: controlHardDeleteAt,
         ttlSeconds: controlTtlSeconds,
         revision: 0,
@@ -389,7 +401,7 @@ describe("isolated feedback control entities", () => {
       cooldownExpiresAt: "2026-07-18T10:10:00.000Z",
       quietResetExpiresAt: "2026-07-20T10:05:00.000Z",
       updatedAt,
-      expiresAt: controlHardDeleteAt,
+      expiresAt: controlExpiresAt,
       hardDeleteAt: controlHardDeleteAt,
       ttlSeconds: controlTtlSeconds,
       revision: 0,
@@ -405,10 +417,10 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-07-18T10:10:00.000Z",
       hardDeleteAt: "2026-07-19T10:10:00.000Z",
-      ttlSeconds:
-        (Date.parse("2026-07-19T10:10:00.000Z") -
-          Date.parse(updatedAt)) /
-        1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        updatedAt,
+        "2026-07-19T10:10:00.000Z",
+      ),
       revision: 0,
     };
 
@@ -440,7 +452,7 @@ describe("isolated feedback control entities", () => {
       cooldownExpiresAt: "2026-07-18T10:10:00.000Z",
       quietResetExpiresAt: "2026-07-20T10:05:00.000Z",
       updatedAt,
-      expiresAt: controlHardDeleteAt,
+      expiresAt: controlExpiresAt,
       hardDeleteAt: controlHardDeleteAt,
       ttlSeconds: controlTtlSeconds,
       revision: 0,
@@ -463,7 +475,7 @@ describe("isolated feedback control entities", () => {
       cooldownExpiresAt: "2026-07-18T10:10:00.000Z",
       quietResetExpiresAt: "2026-07-20T10:05:00.000Z",
       updatedAt,
-      expiresAt: controlHardDeleteAt,
+      expiresAt: controlExpiresAt,
       hardDeleteAt: controlHardDeleteAt,
       ttlSeconds: controlTtlSeconds,
       revision: 0,
@@ -480,7 +492,7 @@ describe("isolated feedback control entities", () => {
       cooldownExpiresAt: "2026-07-18T10:10:00.000Z",
       quietResetExpiresAt: "2026-07-20T10:05:00.000Z",
       updatedAt,
-      expiresAt: controlHardDeleteAt,
+      expiresAt: controlExpiresAt,
       hardDeleteAt: controlHardDeleteAt,
       ttlSeconds: controlTtlSeconds,
       revision: 0,
@@ -517,7 +529,7 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-08-17T10:05:00.000Z",
       hardDeleteAt: "2026-08-18T10:05:00.000Z",
-      ttlSeconds: 31 * 24 * 60 * 60,
+      ttlSeconds: 30 * 24 * 60 * 60,
       revision: 0,
       [field]: value,
     });
@@ -535,10 +547,30 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-08-17T10:05:00.000Z",
       hardDeleteAt: "2026-08-25T10:05:00.000Z",
-      ttlSeconds: 38 * 24 * 60 * 60,
+      ttlSeconds: 37 * 24 * 60 * 60,
       revision: 0,
     });
 
+    expect(result.valid).toBe(false);
+  });
+
+  it("never spends the purge safety window before logical control expiry", () => {
+    const expiresAt = "2026-08-17T10:05:00.000Z";
+    const hardDeleteAt = "2026-08-17T22:05:00.000Z";
+    const result = feedbackReviewEligibilityEntitySchema.validate({
+      type: "feedbackReviewEligibilityEntity",
+      version: "1.0.0",
+      keyedSubject,
+      acceptedReviewCount: 1,
+      denyExpiresAt: expiresAt,
+      updatedAt,
+      expiresAt,
+      hardDeleteAt,
+      ttlSeconds: feedbackControlTtlSeconds(updatedAt, hardDeleteAt),
+      revision: 0,
+    });
+
+    expect(FEEDBACK_CONTROL_PURGE_SAFETY_SECONDS).toBe(24 * 60 * 60);
     expect(result.valid).toBe(false);
   });
 
@@ -552,7 +584,7 @@ describe("isolated feedback control entities", () => {
       cooldownExpiresAt: "2026-07-18T10:10:00.000Z",
       quietResetExpiresAt: "2026-07-20T10:05:00.000Z",
       updatedAt,
-      expiresAt: controlHardDeleteAt,
+      expiresAt: controlExpiresAt,
       hardDeleteAt: controlHardDeleteAt,
       ttlSeconds: controlTtlSeconds,
       revision: 0,
@@ -568,7 +600,7 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-07-19T10:05:00.000Z",
       hardDeleteAt: "2026-07-19T10:05:00.000Z",
-      ttlSeconds: 24 * 60 * 60,
+      ttlSeconds: 1,
       revision: 0,
     });
 
@@ -588,7 +620,7 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-07-20T10:05:00.000Z",
       hardDeleteAt: "2026-07-21T10:05:00.000Z",
-      ttlSeconds: 3 * 24 * 60 * 60,
+      ttlSeconds: 2 * 24 * 60 * 60,
       revision: 0,
     };
     const nextUpdatedAt = initial.cooldownExpiresAt;
@@ -602,8 +634,10 @@ describe("isolated feedback control entities", () => {
       updatedAt: nextUpdatedAt,
       expiresAt: "2026-07-20T10:10:00.000Z",
       hardDeleteAt: nextHardDeleteAt,
-      ttlSeconds:
-        (Date.parse(nextHardDeleteAt) - Date.parse(nextUpdatedAt)) / 1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        nextUpdatedAt,
+        nextHardDeleteAt,
+      ),
       revision: 1,
     };
     const prematureUpdatedAt = "2026-07-18T10:09:00.000Z";
@@ -615,10 +649,10 @@ describe("isolated feedback control entities", () => {
       updatedAt: prematureUpdatedAt,
       expiresAt: "2026-07-20T10:09:00.000Z",
       hardDeleteAt: prematureHardDeleteAt,
-      ttlSeconds:
-        (Date.parse(prematureHardDeleteAt) -
-          Date.parse(prematureUpdatedAt)) /
-        1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        prematureUpdatedAt,
+        prematureHardDeleteAt,
+      ),
     };
     const resetUpdatedAt = "2026-07-20T10:05:00.000Z";
     const resetHardDeleteAt = "2026-07-23T10:05:00.000Z";
@@ -631,8 +665,10 @@ describe("isolated feedback control entities", () => {
       updatedAt: resetUpdatedAt,
       expiresAt: "2026-07-22T10:05:00.000Z",
       hardDeleteAt: resetHardDeleteAt,
-      ttlSeconds:
-        (Date.parse(resetHardDeleteAt) - Date.parse(resetUpdatedAt)) / 1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        resetUpdatedAt,
+        resetHardDeleteAt,
+      ),
       revision: 1,
     };
 
@@ -668,7 +704,7 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-07-20T10:05:00.000Z",
       hardDeleteAt: "2026-07-21T10:05:00.000Z",
-      ttlSeconds: 3 * 24 * 60 * 60,
+      ttlSeconds: 2 * 24 * 60 * 60,
       revision: 0,
     };
     const candidateHardDeleteAt =
@@ -691,10 +727,10 @@ describe("isolated feedback control entities", () => {
       updatedAt: candidateUpdatedAt,
       expiresAt: candidateQuietResetAt,
       hardDeleteAt: candidateHardDeleteAt,
-      ttlSeconds:
-        (Date.parse(candidateHardDeleteAt) -
-          Date.parse(candidateUpdatedAt)) /
-        1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        candidateUpdatedAt,
+        candidateHardDeleteAt,
+      ),
       revision: 1,
     };
 
@@ -713,7 +749,7 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-08-16T10:05:00.000Z",
       hardDeleteAt: "2026-08-17T10:05:00.000Z",
-      ttlSeconds: 30 * 24 * 60 * 60,
+      ttlSeconds: 29 * 24 * 60 * 60,
       revision: 0,
     });
 
@@ -730,7 +766,7 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-08-17T10:05:00.000Z",
       hardDeleteAt: "2026-08-18T10:05:00.000Z",
-      ttlSeconds: 31 * 24 * 60 * 60,
+      ttlSeconds: 30 * 24 * 60 * 60,
       revision: 0,
     };
     const tooEarlyUpdatedAt = "2026-08-16T10:05:00.000Z";
@@ -742,10 +778,10 @@ describe("isolated feedback control entities", () => {
       updatedAt: tooEarlyUpdatedAt,
       expiresAt: "2026-09-15T10:05:00.000Z",
       hardDeleteAt: tooEarlyHardDeleteAt,
-      ttlSeconds:
-        (Date.parse(tooEarlyHardDeleteAt) -
-          Date.parse(tooEarlyUpdatedAt)) /
-        1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        tooEarlyUpdatedAt,
+        tooEarlyHardDeleteAt,
+      ),
       revision: 1,
     };
     const allowedUpdatedAt = initial.denyExpiresAt;
@@ -756,10 +792,10 @@ describe("isolated feedback control entities", () => {
       updatedAt: allowedUpdatedAt,
       expiresAt: "2026-09-16T10:05:00.000Z",
       hardDeleteAt: allowedHardDeleteAt,
-      ttlSeconds:
-        (Date.parse(allowedHardDeleteAt) -
-          Date.parse(allowedUpdatedAt)) /
-        1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        allowedUpdatedAt,
+        allowedHardDeleteAt,
+      ),
     };
 
     expect(
@@ -799,10 +835,10 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-07-18T10:10:00.000Z",
       hardDeleteAt: "2026-07-19T10:10:00.000Z",
-      ttlSeconds:
-        (Date.parse("2026-07-19T10:10:00.000Z") -
-          Date.parse(updatedAt)) /
-        1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        updatedAt,
+        "2026-07-19T10:10:00.000Z",
+      ),
       revision: 0,
     };
 
@@ -830,10 +866,10 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-07-18T10:10:00.000Z",
       hardDeleteAt: "2026-07-19T10:10:00.000Z",
-      ttlSeconds:
-        (Date.parse("2026-07-19T10:10:00.000Z") -
-          Date.parse(updatedAt)) /
-        1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        updatedAt,
+        "2026-07-19T10:10:00.000Z",
+      ),
       revision: 0,
     });
 
@@ -852,10 +888,10 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-07-18T10:10:00.000Z",
       hardDeleteAt: "2026-07-19T10:10:00.000Z",
-      ttlSeconds:
-        (Date.parse("2026-07-19T10:10:00.000Z") -
-          Date.parse(updatedAt)) /
-        1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        updatedAt,
+        "2026-07-19T10:10:00.000Z",
+      ),
       revision: 0,
     };
 
@@ -883,20 +919,20 @@ describe("isolated feedback control entities", () => {
       updatedAt,
       expiresAt: "2026-07-18T10:10:00.000Z",
       hardDeleteAt: "2026-07-19T10:10:00.000Z",
-      ttlSeconds:
-        (Date.parse("2026-07-19T10:10:00.000Z") -
-          Date.parse(updatedAt)) /
-        1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        updatedAt,
+        "2026-07-19T10:10:00.000Z",
+      ),
       revision: 0,
     };
     const committed = {
       ...initial,
       state: FeedbackReservationState.COMMITTED,
       updatedAt: "2026-07-18T10:06:00.000Z",
-      ttlSeconds:
-        (Date.parse(initial.hardDeleteAt) -
-          Date.parse("2026-07-18T10:06:00.000Z")) /
-        1_000,
+      ttlSeconds: feedbackControlTtlSeconds(
+        "2026-07-18T10:06:00.000Z",
+        initial.hardDeleteAt,
+      ),
       revision: 1,
     };
 
@@ -933,10 +969,10 @@ describe("isolated feedback control entities", () => {
         updatedAt,
         expiresAt: "2026-07-18T10:10:00.000Z",
         hardDeleteAt: "2026-07-19T10:10:00.000Z",
-        ttlSeconds:
-          (Date.parse("2026-07-19T10:10:00.000Z") -
-            Date.parse(updatedAt)) /
-          1_000,
+        ttlSeconds: feedbackControlTtlSeconds(
+          updatedAt,
+          "2026-07-19T10:10:00.000Z",
+        ),
         revision: 0,
       };
       const nextUpdatedAt = "2026-07-18T10:06:00.000Z";
@@ -949,10 +985,10 @@ describe("isolated feedback control entities", () => {
         updatedAt: nextUpdatedAt,
         expiresAt: "2026-07-18T10:11:00.000Z",
         hardDeleteAt: extendedHardDeleteAt,
-        ttlSeconds:
-          (Date.parse(extendedHardDeleteAt) -
-            Date.parse(nextUpdatedAt)) /
-          1_000,
+        ttlSeconds: feedbackControlTtlSeconds(
+          nextUpdatedAt,
+          extendedHardDeleteAt,
+        ),
         revision: 1,
       };
 
@@ -980,10 +1016,10 @@ describe("isolated feedback control entities", () => {
         updatedAt,
         expiresAt: "2026-07-18T10:10:00.000Z",
         hardDeleteAt: "2026-07-19T10:10:00.000Z",
-        ttlSeconds:
-          (Date.parse("2026-07-19T10:10:00.000Z") -
-            Date.parse(updatedAt)) /
-          1_000,
+        ttlSeconds: feedbackControlTtlSeconds(
+          updatedAt,
+          "2026-07-19T10:10:00.000Z",
+        ),
         revision: 0,
       };
       const terminal = {

@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   FEEDBACK_PROGRESSIVE_COOLDOWN_LADDER_MS,
   FEEDBACK_PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS,
+  FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS,
   FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS,
-  FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+  FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
   FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS,
   FeedbackReservationState,
   feedbackProgressiveCooldownAggregateEntitySchema,
@@ -28,8 +29,26 @@ function canonicalToken(byteLength: 16 | 32, index: number): string {
   return bytes.toString("base64url");
 }
 
-function ttlSeconds(writtenAtMs: number, purgeAfterMs: number): number {
-  return Math.max(0, Math.floor((purgeAfterMs - writtenAtMs) / 1_000));
+function ttlSeconds(writtenAtMs: number, hardDeleteByMs: number): number {
+  return Math.max(
+    0,
+    Math.floor(
+      (hardDeleteByMs -
+        writtenAtMs -
+        FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS) /
+        1_000,
+    ),
+  );
+}
+
+function hardDeleteBy(
+  writtenAtMs: number,
+  ...reconciliationHorizonsMs: readonly number[]
+): number {
+  return (
+    Math.max(writtenAtMs, ...reconciliationHorizonsMs) +
+    FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS
+  );
 }
 
 function reservedRecord(
@@ -44,8 +63,8 @@ function reservedRecord(
     status: FeedbackReservationState.RESERVED,
     reservedAtMs,
     leaseExpiresAtMs,
-    retainUntilMs:
-      leaseExpiresAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+    reconciliationUntilMs:
+      leaseExpiresAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
     ...override,
   };
 }
@@ -55,22 +74,25 @@ function aggregate(
 ): FeedbackProgressiveCooldownAggregateEntity {
   const writtenAtMs = override.writtenAtMs ?? BASE_MS;
   const reservations = override.state?.reservations ?? [reservedRecord()];
-  const purgeAfterMs =
-    override.state?.purgeAfterMs ??
-    Math.max(...reservations.map((record) => record.retainUntilMs));
+  const hardDeleteByMs =
+    override.state?.hardDeleteByMs ??
+    hardDeleteBy(
+      writtenAtMs,
+      ...reservations.map((record) => record.reconciliationUntilMs),
+    );
 
   return {
     type: "feedbackProgressiveCooldownAggregateEntity",
     version: "1.0.0",
     stateId,
     writtenAtMs,
-    ttlSeconds: ttlSeconds(writtenAtMs, purgeAfterMs),
+    ttlSeconds: ttlSeconds(writtenAtMs, hardDeleteByMs),
     revision: 0,
     state: {
       schemaVersion: "1",
       streak: 0,
       reservations,
-      purgeAfterMs,
+      hardDeleteByMs,
       ...override.state,
     },
     ...override,
@@ -90,20 +112,23 @@ function releasedAggregate(
     reservedAtMs: source.reservedAtMs,
     leaseExpiresAtMs: source.leaseExpiresAtMs,
     releasedAtMs,
-    retainUntilMs:
-      releasedAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+    reconciliationUntilMs:
+      releasedAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
   };
-  const purgeAfterMs = released.retainUntilMs;
+  const hardDeleteByMs = hardDeleteBy(
+    releasedAtMs,
+    released.reconciliationUntilMs,
+  );
 
   return aggregate({
     writtenAtMs: releasedAtMs,
-    ttlSeconds: ttlSeconds(releasedAtMs, purgeAfterMs),
+    ttlSeconds: ttlSeconds(releasedAtMs, hardDeleteByMs),
     revision: existing.revision + 1,
     state: {
       schemaVersion: "1",
       streak: 0,
       reservations: [released],
-      purgeAfterMs,
+      hardDeleteByMs,
     },
   });
 }
@@ -131,16 +156,19 @@ function committedAggregate(
     committedStreak,
     cooldownDurationMs,
     cooldownUntilMs,
-    retainUntilMs:
+    reconciliationUntilMs:
       committedAtMs +
       FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS +
-      FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+      FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
   };
-  const purgeAfterMs = committed.retainUntilMs;
+  const hardDeleteByMs = hardDeleteBy(
+    committedAtMs,
+    committed.reconciliationUntilMs,
+  );
 
   return aggregate({
     writtenAtMs: committedAtMs,
-    ttlSeconds: ttlSeconds(committedAtMs, purgeAfterMs),
+    ttlSeconds: ttlSeconds(committedAtMs, hardDeleteByMs),
     revision: existing.revision + 1,
     state: {
       schemaVersion: "1",
@@ -148,7 +176,7 @@ function committedAggregate(
       lastCommittedAtMs: committedAtMs,
       cooldownUntilMs,
       reservations: [committed],
-      purgeAfterMs,
+      hardDeleteByMs,
     },
   });
 }
@@ -168,14 +196,14 @@ function addedReservationAggregate(
     reservedAtMs,
     leaseExpiresAtMs:
       reservedAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS,
-    retainUntilMs:
+    reconciliationUntilMs:
       reservedAtMs +
       FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS +
-      FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+      FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
   });
   const reservations = [
     ...existing.state.reservations.filter(
-      (record) => record.retainUntilMs > reservedAtMs,
+      (record) => record.reconciliationUntilMs > reservedAtMs,
     ),
     nextRecord,
   ];
@@ -185,27 +213,27 @@ function addedReservationAggregate(
   const cooldownUntilMs = reset
     ? undefined
     : existing.state.cooldownUntilMs;
-  const purgeAfterMs = Math.max(
+  const hardDeleteByMs = hardDeleteBy(
     reservedAtMs,
-    ...reservations.map((record) => record.retainUntilMs),
+    ...reservations.map((record) => record.reconciliationUntilMs),
     ...(lastCommittedAtMs === undefined
       ? []
       : [
           lastCommittedAtMs +
             FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS +
-            FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+            FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
         ]),
     ...(cooldownUntilMs === undefined
       ? []
       : [
           cooldownUntilMs +
-            FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+            FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
         ]),
   );
 
   return aggregate({
     writtenAtMs: reservedAtMs,
-    ttlSeconds: ttlSeconds(reservedAtMs, purgeAfterMs),
+    ttlSeconds: ttlSeconds(reservedAtMs, hardDeleteByMs),
     revision: existing.revision + 1,
     state: {
       schemaVersion: "1",
@@ -213,7 +241,7 @@ function addedReservationAggregate(
       ...(lastCommittedAtMs === undefined ? {} : { lastCommittedAtMs }),
       ...(cooldownUntilMs === undefined ? {} : { cooldownUntilMs }),
       reservations,
-      purgeAfterMs,
+      hardDeleteByMs,
     },
   });
 }
@@ -230,7 +258,8 @@ describe("feedback progressive-cooldown aggregate", () => {
     expect(FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS).toBe(
       5 * MINUTE_MS,
     );
-    expect(FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS).toBe(7 * DAY_MS);
+    expect(FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS).toBe(6 * DAY_MS);
+    expect(FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS).toBe(DAY_MS);
     expect(FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS).toBe(48 * HOUR_MS);
     expect(FEEDBACK_PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS).toBe(64);
   });
@@ -275,6 +304,179 @@ describe("feedback progressive-cooldown aggregate", () => {
     ).toBe(true);
   });
 
+  it("orders independent late commits deterministically in one millisecond", () => {
+    const firstReleasedAtMs = BASE_MS + MINUTE_MS;
+    const secondReleasedAtMs = firstReleasedAtMs + 1;
+    const firstReleased: FeedbackProgressiveCooldownReservationRecord = {
+      ...reservedRecord(),
+      status: FeedbackReservationState.RELEASED,
+      releasedAtMs: firstReleasedAtMs,
+      reconciliationUntilMs:
+        firstReleasedAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
+    };
+    const secondReleased: FeedbackProgressiveCooldownReservationRecord = {
+      ...reservedRecord({
+        reservationId: secondReservationId,
+        idempotencyDigest: secondIdempotencyDigest,
+        reservedAtMs: BASE_MS + 1,
+        leaseExpiresAtMs:
+          BASE_MS +
+          1 +
+          FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS,
+      }),
+      status: FeedbackReservationState.RELEASED,
+      releasedAtMs: secondReleasedAtMs,
+      reconciliationUntilMs:
+        secondReleasedAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
+    };
+    const releasedWrittenAtMs = BASE_MS + 2 * MINUTE_MS;
+    const releasedHardDeleteByMs = hardDeleteBy(
+      releasedWrittenAtMs,
+      firstReleased.reconciliationUntilMs,
+      secondReleased.reconciliationUntilMs,
+    );
+    const released = aggregate({
+      writtenAtMs: releasedWrittenAtMs,
+      ttlSeconds: ttlSeconds(
+        releasedWrittenAtMs,
+        releasedHardDeleteByMs,
+      ),
+      state: {
+        schemaVersion: "1",
+        streak: 0,
+        reservations: [firstReleased, secondReleased],
+        hardDeleteByMs: releasedHardDeleteByMs,
+      },
+    });
+
+    const committedAtMs = BASE_MS + 3 * MINUTE_MS;
+    const commitRecord = (
+      source: FeedbackProgressiveCooldownReservationRecord,
+      committedStreak: number,
+    ): FeedbackProgressiveCooldownReservationRecord => {
+      const cooldownDurationMs =
+        FEEDBACK_PROGRESSIVE_COOLDOWN_LADDER_MS[committedStreak - 1];
+      if (cooldownDurationMs === undefined) {
+        throw new Error("Synthetic cooldown step is missing.");
+      }
+      return {
+        reservationId: source.reservationId,
+        idempotencyDigest: source.idempotencyDigest,
+        status: FeedbackReservationState.COMMITTED,
+        reservedAtMs: source.reservedAtMs,
+        leaseExpiresAtMs: source.leaseExpiresAtMs,
+        committedAtMs,
+        committedStreak,
+        cooldownDurationMs,
+        cooldownUntilMs: committedAtMs + cooldownDurationMs,
+        reconciliationUntilMs:
+          committedAtMs +
+          FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS +
+          FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
+      };
+    };
+    const firstCommitted = commitRecord(firstReleased, 1);
+    const commitHardDeleteByMs = hardDeleteBy(
+      committedAtMs,
+      firstCommitted.reconciliationUntilMs,
+    );
+    const afterFirstCommit = aggregate({
+      writtenAtMs: committedAtMs,
+      ttlSeconds: ttlSeconds(committedAtMs, commitHardDeleteByMs),
+      revision: released.revision + 1,
+      state: {
+        schemaVersion: "1",
+        streak: 1,
+        lastCommittedAtMs: committedAtMs,
+        cooldownUntilMs: firstCommitted.cooldownUntilMs,
+        reservations: [firstCommitted, secondReleased],
+        hardDeleteByMs: commitHardDeleteByMs,
+      },
+    });
+    const secondCommitted = commitRecord(secondReleased, 2);
+    const afterSecondCommit = aggregate({
+      writtenAtMs: committedAtMs,
+      ttlSeconds: ttlSeconds(committedAtMs, commitHardDeleteByMs),
+      revision: afterFirstCommit.revision + 1,
+      state: {
+        schemaVersion: "1",
+        streak: 2,
+        lastCommittedAtMs: committedAtMs,
+        cooldownUntilMs: secondCommitted.cooldownUntilMs,
+        reservations: [secondCommitted, firstCommitted],
+        hardDeleteByMs: commitHardDeleteByMs,
+      },
+    });
+
+    expect(
+      feedbackProgressiveCooldownAggregateEntitySchema.validate(
+        afterFirstCommit,
+        released,
+      ).valid,
+    ).toBe(true);
+    expect(
+      feedbackProgressiveCooldownAggregateEntitySchema.validate(
+        afterSecondCommit,
+        afterFirstCommit,
+      ).valid,
+    ).toBe(true);
+  });
+
+  it("never transitions a reservation at or after reconciliation expiry", () => {
+    const reserved = aggregate();
+    const released = releasedAggregate(reserved);
+    const cases = [
+      {
+        existing: reserved,
+        transition: (
+          value: FeedbackProgressiveCooldownAggregateEntity,
+          writtenAtMs: number,
+        ) => releasedAggregate(value, writtenAtMs),
+      },
+      {
+        existing: reserved,
+        transition: (
+          value: FeedbackProgressiveCooldownAggregateEntity,
+          writtenAtMs: number,
+        ) => committedAggregate(value, writtenAtMs),
+      },
+      {
+        existing: released,
+        transition: (
+          value: FeedbackProgressiveCooldownAggregateEntity,
+          writtenAtMs: number,
+        ) => committedAggregate(value, writtenAtMs),
+      },
+    ] as const;
+
+    for (const { existing, transition } of cases) {
+      const reconciliationBoundary =
+        existing.state.reservations[0]?.reconciliationUntilMs;
+      if (reconciliationBoundary === undefined) {
+        throw new Error("Synthetic reconciliation boundary is missing.");
+      }
+
+      expect(
+        feedbackProgressiveCooldownAggregateEntitySchema.validate(
+          transition(existing, reconciliationBoundary - 1),
+          existing,
+        ).valid,
+      ).toBe(true);
+      expect(
+        feedbackProgressiveCooldownAggregateEntitySchema.validate(
+          transition(existing, reconciliationBoundary),
+          existing,
+        ).valid,
+      ).toBe(false);
+      expect(
+        feedbackProgressiveCooldownAggregateEntitySchema.validate(
+          transition(existing, reconciliationBoundary + 1),
+          existing,
+        ).valid,
+      ).toBe(false);
+    }
+  });
+
   it("validates every ladder step and the 24-hour cap", () => {
     const records: FeedbackProgressiveCooldownReservationRecord[] = [];
     let committedAtMs = BASE_MS + MINUTE_MS;
@@ -301,10 +503,10 @@ describe("feedback progressive-cooldown aggregate", () => {
         committedStreak,
         cooldownDurationMs,
         cooldownUntilMs: committedAtMs + cooldownDurationMs,
-        retainUntilMs:
+        reconciliationUntilMs:
           committedAtMs +
           FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS +
-          FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+          FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
       });
       committedAtMs += cooldownDurationMs;
     }
@@ -316,20 +518,21 @@ describe("feedback progressive-cooldown aggregate", () => {
     ) {
       throw new Error("Synthetic latest commit is missing.");
     }
-    const purgeAfterMs = Math.max(
-      ...records.map((record) => record.retainUntilMs),
-      latest.cooldownUntilMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+    const hardDeleteByMs = hardDeleteBy(
+      latest.committedAtMs,
+      ...records.map((record) => record.reconciliationUntilMs),
+      latest.cooldownUntilMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
     );
     const value = aggregate({
       writtenAtMs: latest.committedAtMs,
-      ttlSeconds: ttlSeconds(latest.committedAtMs, purgeAfterMs),
+      ttlSeconds: ttlSeconds(latest.committedAtMs, hardDeleteByMs),
       state: {
         schemaVersion: "1",
         streak: latest.committedStreak,
         lastCommittedAtMs: latest.committedAtMs,
         cooldownUntilMs: latest.cooldownUntilMs,
         reservations: records,
-        purgeAfterMs,
+        hardDeleteByMs,
       },
     });
 
@@ -407,6 +610,21 @@ describe("feedback progressive-cooldown aggregate", () => {
     ).toBe(false);
   });
 
+  it("rejects a replay when the stored row contains an unknown join field", () => {
+    const released = releasedAggregate(aggregate());
+    const corruptExisting = {
+      ...structuredClone(released),
+      accountId: "synthetic-account",
+    };
+
+    expect(
+      feedbackProgressiveCooldownAggregateEntitySchema.validate(
+        structuredClone(released),
+        corruptExisting,
+      ).valid,
+    ).toBe(false);
+  });
+
   it("treats reservation-array order as non-semantic on replay", () => {
     const writtenAtMs = BASE_MS + 2 * MINUTE_MS;
     const records: FeedbackProgressiveCooldownReservationRecord[] = [
@@ -414,10 +632,10 @@ describe("feedback progressive-cooldown aggregate", () => {
         ...reservedRecord(),
         status: FeedbackReservationState.RELEASED,
         releasedAtMs: BASE_MS + MINUTE_MS,
-        retainUntilMs:
+        reconciliationUntilMs:
           BASE_MS +
           MINUTE_MS +
-          FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+          FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
       },
       {
         ...reservedRecord({
@@ -431,24 +649,25 @@ describe("feedback progressive-cooldown aggregate", () => {
         }),
         status: FeedbackReservationState.RELEASED,
         releasedAtMs: BASE_MS + MINUTE_MS + 1,
-        retainUntilMs:
+        reconciliationUntilMs:
           BASE_MS +
           MINUTE_MS +
           1 +
-          FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+          FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
       },
     ];
-    const purgeAfterMs = Math.max(
-      ...records.map((record) => record.retainUntilMs),
+    const hardDeleteByMs = hardDeleteBy(
+      writtenAtMs,
+      ...records.map((record) => record.reconciliationUntilMs),
     );
     const original = aggregate({
       writtenAtMs,
-      ttlSeconds: ttlSeconds(writtenAtMs, purgeAfterMs),
+      ttlSeconds: ttlSeconds(writtenAtMs, hardDeleteByMs),
       state: {
         schemaVersion: "1",
         streak: 0,
         reservations: records,
-        purgeAfterMs,
+        hardDeleteByMs,
       },
     });
     const reordered = {
@@ -483,7 +702,10 @@ describe("feedback progressive-cooldown aggregate", () => {
             schemaVersion: "1",
             streak: 0,
             reservations: [first, duplicateId],
-            purgeAfterMs: first.retainUntilMs,
+            hardDeleteByMs: hardDeleteBy(
+              BASE_MS,
+              first.reconciliationUntilMs,
+            ),
           },
         }),
       ).valid,
@@ -495,7 +717,10 @@ describe("feedback progressive-cooldown aggregate", () => {
             schemaVersion: "1",
             streak: 0,
             reservations: [first, duplicateDigest],
-            purgeAfterMs: first.retainUntilMs,
+            hardDeleteByMs: hardDeleteBy(
+              BASE_MS,
+              first.reconciliationUntilMs,
+            ),
           },
         }),
       ).valid,
@@ -571,13 +796,14 @@ describe("feedback progressive-cooldown aggregate", () => {
           }),
           status: FeedbackReservationState.RELEASED,
           releasedAtMs,
-          retainUntilMs:
-            releasedAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+          reconciliationUntilMs:
+            releasedAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
         };
       },
     );
-    const overCapacityPurge = Math.max(
-      ...overCapacity.map((record) => record.retainUntilMs),
+    const overCapacityHardDeleteByMs = hardDeleteBy(
+      overCapacityWrittenAt,
+      ...overCapacity.map((record) => record.reconciliationUntilMs),
     );
 
     expect(
@@ -587,7 +813,10 @@ describe("feedback progressive-cooldown aggregate", () => {
             schemaVersion: "1",
             streak: 0,
             reservations: sparse,
-            purgeAfterMs: reservedRecord().retainUntilMs,
+            hardDeleteByMs: hardDeleteBy(
+              BASE_MS,
+              reservedRecord().reconciliationUntilMs,
+            ),
           },
         }),
       ).valid,
@@ -599,7 +828,10 @@ describe("feedback progressive-cooldown aggregate", () => {
             schemaVersion: "1",
             streak: 0,
             reservations: [accessorRecord],
-            purgeAfterMs: reservedRecord().retainUntilMs,
+            hardDeleteByMs: hardDeleteBy(
+              BASE_MS,
+              reservedRecord().reconciliationUntilMs,
+            ),
           },
         }),
       ).valid,
@@ -610,13 +842,13 @@ describe("feedback progressive-cooldown aggregate", () => {
           writtenAtMs: overCapacityWrittenAt,
           ttlSeconds: ttlSeconds(
             overCapacityWrittenAt,
-            overCapacityPurge,
+            overCapacityHardDeleteByMs,
           ),
           state: {
             schemaVersion: "1",
             streak: 0,
             reservations: overCapacity,
-            purgeAfterMs: overCapacityPurge,
+            hardDeleteByMs: overCapacityHardDeleteByMs,
           },
         }),
       ).valid,
@@ -678,7 +910,7 @@ describe("feedback progressive-cooldown aggregate", () => {
     }
   });
 
-  it("requires the exact seven-day retention, purge deadline, and row TTL", () => {
+  it("requires exact reconciliation, hard purge, and safety-windowed TTL", () => {
     const value = aggregate();
     const record = value.state.reservations[0];
     if (!record) throw new Error("Synthetic fixture is missing a reservation.");
@@ -691,7 +923,7 @@ describe("feedback progressive-cooldown aggregate", () => {
           reservations: [
             {
               ...record,
-              retainUntilMs: record.retainUntilMs + 1,
+              reconciliationUntilMs: record.reconciliationUntilMs + 1,
             },
           ],
         },
@@ -700,7 +932,7 @@ describe("feedback progressive-cooldown aggregate", () => {
     expect(
       feedbackProgressiveCooldownAggregateEntitySchema.validate({
         ...value,
-        state: { ...value.state, purgeAfterMs: value.state.purgeAfterMs + 1 },
+        state: { ...value.state, hardDeleteByMs: value.state.hardDeleteByMs + 1 },
       }).valid,
     ).toBe(false);
     expect(
@@ -717,24 +949,112 @@ describe("feedback progressive-cooldown aggregate", () => {
     ).toBe(false);
   });
 
-  it("uses zero TTL for an aggregate pruned exactly at hard deletion", () => {
+  it("reserves a full day for explicit purge and bounded backup expiry", () => {
+    const value = aggregate();
+    const expectedExpiryAtMs =
+      value.writtenAtMs + value.ttlSeconds * 1_000;
+
+    expect(expectedExpiryAtMs).toBe(
+      value.state.hardDeleteByMs -
+        FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS,
+    );
+    expect(value.ttlSeconds).toBeGreaterThan(0);
+  });
+
+  it("keeps a later record live when another record expires 12 hours earlier", () => {
+    const firstReleasedAtMs = BASE_MS + MINUTE_MS;
+    const secondReleasedAtMs = firstReleasedAtMs + 12 * HOUR_MS;
+    const first: FeedbackProgressiveCooldownReservationRecord = {
+      ...reservedRecord(),
+      status: FeedbackReservationState.RELEASED,
+      releasedAtMs: firstReleasedAtMs,
+      reconciliationUntilMs:
+        firstReleasedAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
+    };
+    const second: FeedbackProgressiveCooldownReservationRecord = {
+      ...reservedRecord({
+        reservationId: secondReservationId,
+        idempotencyDigest: secondIdempotencyDigest,
+        reservedAtMs: BASE_MS + 1,
+        leaseExpiresAtMs:
+          BASE_MS +
+          1 +
+          FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS,
+      }),
+      status: FeedbackReservationState.RELEASED,
+      releasedAtMs: secondReleasedAtMs,
+      reconciliationUntilMs:
+        secondReleasedAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
+    };
+    const existingHardDeleteByMs = hardDeleteBy(
+      secondReleasedAtMs,
+      first.reconciliationUntilMs,
+      second.reconciliationUntilMs,
+    );
+    const existing = aggregate({
+      writtenAtMs: secondReleasedAtMs,
+      ttlSeconds: ttlSeconds(secondReleasedAtMs, existingHardDeleteByMs),
+      state: {
+        schemaVersion: "1",
+        streak: 0,
+        reservations: [first, second],
+        hardDeleteByMs: existingHardDeleteByMs,
+      },
+    });
+    const nextWrittenAtMs = first.reconciliationUntilMs;
+    const nextHardDeleteByMs = hardDeleteBy(
+      nextWrittenAtMs,
+      second.reconciliationUntilMs,
+    );
+    const next: FeedbackProgressiveCooldownAggregateEntity = {
+      ...existing,
+      writtenAtMs: nextWrittenAtMs,
+      ttlSeconds: ttlSeconds(nextWrittenAtMs, nextHardDeleteByMs),
+      revision: existing.revision + 1,
+      state: {
+        schemaVersion: "1",
+        streak: 0,
+        reservations: [second],
+        hardDeleteByMs: nextHardDeleteByMs,
+      },
+    };
+
+    expect(next.ttlSeconds).toBe(12 * HOUR_MS / 1_000);
+    expect(
+      feedbackProgressiveCooldownAggregateEntitySchema.validate(
+        next,
+        existing,
+      ).valid,
+    ).toBe(true);
+    expect(
+      feedbackProgressiveCooldownAggregateEntitySchema.validate({
+        ...next,
+        ttlSeconds: 0,
+      }).valid,
+    ).toBe(false);
+  });
+
+  it("uses zero TTL only for an empty aggregate at reconciliation expiry", () => {
     const existing = aggregate();
-    const hardDeleteAtMs = existing.state.reservations[0]?.retainUntilMs;
-    if (hardDeleteAtMs === undefined) {
-      throw new Error("Synthetic hard-delete deadline is missing.");
+    const reconciliationUntilMs =
+      existing.state.reservations[0]?.reconciliationUntilMs;
+    if (reconciliationUntilMs === undefined) {
+      throw new Error("Synthetic reconciliation deadline is missing.");
     }
     const pruned: FeedbackProgressiveCooldownAggregateEntity = {
       type: "feedbackProgressiveCooldownAggregateEntity",
       version: "1.0.0",
       stateId,
-      writtenAtMs: hardDeleteAtMs,
+      writtenAtMs: reconciliationUntilMs,
       ttlSeconds: 0,
       revision: existing.revision + 1,
       state: {
         schemaVersion: "1",
         streak: 0,
         reservations: [],
-        purgeAfterMs: hardDeleteAtMs,
+        hardDeleteByMs:
+          reconciliationUntilMs +
+          FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS,
       },
     };
 
@@ -750,9 +1070,32 @@ describe("feedback progressive-cooldown aggregate", () => {
         ttlSeconds: 1,
       }).valid,
     ).toBe(false);
+
+    const recordWithSubsecondReconciliation =
+      existing.state.reservations[0];
+    if (recordWithSubsecondReconciliation === undefined) {
+      throw new Error("Synthetic reservation is missing.");
+    }
+    const subsecondWrittenAtMs =
+      recordWithSubsecondReconciliation.reconciliationUntilMs - 1;
+    const subsecondHardDeleteByMs = hardDeleteBy(
+      subsecondWrittenAtMs,
+      recordWithSubsecondReconciliation.reconciliationUntilMs,
+    );
+    expect(
+      feedbackProgressiveCooldownAggregateEntitySchema.validate({
+        ...existing,
+        writtenAtMs: subsecondWrittenAtMs,
+        ttlSeconds: 0,
+        state: {
+          ...existing.state,
+          hardDeleteByMs: subsecondHardDeleteByMs,
+        },
+      }).valid,
+    ).toBe(false);
   });
 
-  it("allows pruning only after retention and resets only after 48 quiet hours", () => {
+  it("allows pruning only after reconciliation and resets after 48 quiet hours", () => {
     const committed = committedAggregate(aggregate(), BASE_MS + MINUTE_MS);
     const beforeReset = aggregate({
       writtenAtMs:
@@ -772,18 +1115,20 @@ describe("feedback progressive-cooldown aggregate", () => {
       reservedAtMs: resetAt,
       leaseExpiresAtMs:
         resetAt + FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS,
-      retainUntilMs:
+      reconciliationUntilMs:
         resetAt +
         FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS +
-        FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS,
+        FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
     });
-    const resetPurge = Math.max(
-      committed.state.purgeAfterMs,
-      resetRecord.retainUntilMs,
+    const resetHardDeleteByMs = hardDeleteBy(
+      resetAt,
+      committed.state.hardDeleteByMs -
+        FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS,
+      resetRecord.reconciliationUntilMs,
     );
     const afterReset = aggregate({
       writtenAtMs: resetAt,
-      ttlSeconds: ttlSeconds(resetAt, resetPurge),
+      ttlSeconds: ttlSeconds(resetAt, resetHardDeleteByMs),
       revision: committed.revision + 1,
       state: {
         schemaVersion: "1",
@@ -792,7 +1137,7 @@ describe("feedback progressive-cooldown aggregate", () => {
           ...committed.state.reservations,
           resetRecord,
         ],
-        purgeAfterMs: resetPurge,
+        hardDeleteByMs: resetHardDeleteByMs,
       },
     });
 
@@ -815,7 +1160,10 @@ describe("feedback progressive-cooldown aggregate", () => {
       state: {
         ...afterReset.state,
         reservations: [resetRecord],
-        purgeAfterMs: resetRecord.retainUntilMs,
+        hardDeleteByMs: hardDeleteBy(
+          afterReset.writtenAtMs,
+          resetRecord.reconciliationUntilMs,
+        ),
       },
     };
     expect(
@@ -825,21 +1173,27 @@ describe("feedback progressive-cooldown aggregate", () => {
       ).valid,
     ).toBe(false);
 
-    const committedRetentionEnds =
-      committed.state.reservations[0]?.retainUntilMs;
-    if (committedRetentionEnds === undefined) {
-      throw new Error("Synthetic committed retention is missing.");
+    const committedReconciliationEnds =
+      committed.state.reservations[0]?.reconciliationUntilMs;
+    if (committedReconciliationEnds === undefined) {
+      throw new Error("Synthetic committed reconciliation is missing.");
     }
-    const validPrunePurge = resetRecord.retainUntilMs;
+    const validPruneHardDeleteByMs = hardDeleteBy(
+      committedReconciliationEnds,
+      resetRecord.reconciliationUntilMs,
+    );
     const validPrune = {
       ...afterReset,
-      writtenAtMs: committedRetentionEnds,
-      ttlSeconds: ttlSeconds(committedRetentionEnds, validPrunePurge),
+      writtenAtMs: committedReconciliationEnds,
+      ttlSeconds: ttlSeconds(
+        committedReconciliationEnds,
+        validPruneHardDeleteByMs,
+      ),
       revision: afterReset.revision + 1,
       state: {
         ...afterReset.state,
         reservations: [resetRecord],
-        purgeAfterMs: validPrunePurge,
+        hardDeleteByMs: validPruneHardDeleteByMs,
       },
     };
     expect(

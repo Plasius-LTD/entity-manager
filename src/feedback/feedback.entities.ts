@@ -9,12 +9,14 @@ import {
 import { isCanonicalUtcTimestamp } from "../family/validation.js";
 
 const MAX_HARD_DELETE_LAG_SECONDS = 7 * 24 * 60 * 60;
+const CONTROL_PURGE_SAFETY_SECONDS = 24 * 60 * 60;
 const MAX_TTL_SECONDS = 3 * 366 * 24 * 60 * 60;
 const REVIEW_DENY_SECONDS = 30 * 24 * 60 * 60;
 const BUG_QUIET_RESET_SECONDS = 48 * 60 * 60;
 const MILLISECONDS_PER_SECOND = 1_000;
 const PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS = 5 * 60 * 1_000;
-const PROGRESSIVE_COOLDOWN_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
+const PROGRESSIVE_COOLDOWN_RECONCILIATION_MS = 6 * 24 * 60 * 60 * 1_000;
+const PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS = 24 * 60 * 60 * 1_000;
 const PROGRESSIVE_COOLDOWN_RESET_MS = 48 * 60 * 60 * 1_000;
 const PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS = 64;
 const UUID_V4_PATTERN =
@@ -33,6 +35,9 @@ const RECONCILIATION_WINDOW_PATTERN =
 /** Maximum permitted delay between logical control expiry and hard deletion. */
 export const FEEDBACK_CONTROL_MAX_HARD_DELETE_LAG_SECONDS =
   MAX_HARD_DELETE_LAG_SECONDS;
+/** Reserved time for verified control deletion and bounded backup expiry. */
+export const FEEDBACK_CONTROL_PURGE_SAFETY_SECONDS =
+  CONTROL_PURGE_SAFETY_SECONDS;
 /** Exact accepted-review deny duration. */
 export const FEEDBACK_REVIEW_DENY_SECONDS = REVIEW_DENY_SECONDS;
 /** Exact quiet period after which the progressive bug ladder resets. */
@@ -50,7 +55,7 @@ export const FEEDBACK_BUG_COOLDOWN_SECONDS = [
  * Exact default progressive-cooldown policy shared with `@plasius/api`.
  *
  * This policy is deliberately closed: persisted feedback rows must not carry
- * caller-selected cooldown or retention values.
+ * caller-selected cooldown or reconciliation values.
  */
 export const FEEDBACK_PROGRESSIVE_COOLDOWN_LADDER_MS = Object.freeze([
   5 * 60 * 1_000,
@@ -62,9 +67,15 @@ export const FEEDBACK_PROGRESSIVE_COOLDOWN_LADDER_MS = Object.freeze([
 /** Exact five-minute reservation lease. */
 export const FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS =
   PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS;
-/** Exact seven-day post-expiry control retention. */
-export const FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS =
-  PROGRESSIVE_COOLDOWN_RETENTION_MS;
+/** Exact six-day post-expiry reconciliation availability. */
+export const FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS =
+  PROGRESSIVE_COOLDOWN_RECONCILIATION_MS;
+/**
+ * Safety window reserved for explicit deletion, verification, and bounded
+ * backup expiry before the absolute control-data purge deadline.
+ */
+export const FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS =
+  PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS;
 /** Exact 48-hour quiet-reset duration. */
 export const FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS =
   PROGRESSIVE_COOLDOWN_RESET_MS;
@@ -231,9 +242,13 @@ function closeFeedbackSchema<S extends SchemaShape>(
       }
 
       if (existing !== undefined) {
+        if (!isRecord(existing)) {
+          return invalidResult("Invalid existing feedback entity.");
+        }
+        const existingKeys = ownDataKeys(existing);
         if (
-          !isRecord(existing) ||
-          ownDataKeys(existing) === undefined
+          existingKeys === undefined ||
+          existingKeys.some((key) => !allowedFields.has(key))
         ) {
           return invalidResult("Invalid existing feedback entity.");
         }
@@ -329,7 +344,7 @@ function ttlField(immutable = false) {
     .required()
     .version("1.0")
     .description(
-      "Storage TTL in whole seconds, ending exactly at hardDeleteAt.",
+      "Maximum storage TTL budget in whole seconds before hardDeleteAt.",
     )
     .validator(
       (value) =>
@@ -493,11 +508,16 @@ function reportWindowMatchesArtifact(
 function validateLifecycle(
   entity: Record<string, unknown>,
   anchorField: "createdAt" | "updatedAt",
+  purgeSafetySeconds = 0,
 ): boolean {
-  const ttlSeconds = exactSecondsBetween(
+  const lifetimeSeconds = exactSecondsBetween(
     entity[anchorField],
     entity.hardDeleteAt,
   );
+  const ttlSeconds =
+    lifetimeSeconds === undefined
+      ? undefined
+      : lifetimeSeconds - purgeSafetySeconds;
   const hardDeleteLagSeconds = exactSecondsBetween(
     entity.expiresAt ?? entity.retentionExpiresAt,
     entity.hardDeleteAt,
@@ -505,11 +525,30 @@ function validateLifecycle(
 
   return (
     ttlSeconds !== undefined &&
+    ttlSeconds > 0 &&
     ttlSeconds === entity.ttlSeconds &&
     (entity.hardDeleteAt ===
       (entity.expiresAt ?? entity.retentionExpiresAt) ||
       (hardDeleteLagSeconds !== undefined &&
         hardDeleteLagSeconds <= MAX_HARD_DELETE_LAG_SECONDS))
+  );
+}
+
+function validateControlLifecycle(
+  entity: Record<string, unknown>,
+): boolean {
+  const purgeWindowSeconds = exactSecondsBetween(
+    entity.expiresAt,
+    entity.hardDeleteAt,
+  );
+  return (
+    purgeWindowSeconds !== undefined &&
+    purgeWindowSeconds >= CONTROL_PURGE_SAFETY_SECONDS &&
+    validateLifecycle(
+      entity,
+      "updatedAt",
+      CONTROL_PURGE_SAFETY_SECONDS,
+    )
   );
 }
 
@@ -748,7 +787,7 @@ export interface FeedbackProgressiveCooldownReservationRecord {
   readonly status: FeedbackReservationState;
   readonly reservedAtMs: number;
   readonly leaseExpiresAtMs: number;
-  readonly retainUntilMs: number;
+  readonly reconciliationUntilMs: number;
   readonly committedAtMs?: number;
   readonly committedStreak?: number;
   readonly cooldownDurationMs?: number;
@@ -762,7 +801,7 @@ export interface FeedbackProgressiveCooldownState {
   readonly lastCommittedAtMs?: number;
   readonly cooldownUntilMs?: number;
   readonly reservations: readonly FeedbackProgressiveCooldownReservationRecord[];
-  readonly purgeAfterMs: number;
+  readonly hardDeleteByMs: number;
 }
 
 /**
@@ -977,7 +1016,7 @@ const progressiveReservationCommonKeys = new Set([
   "status",
   "reservedAtMs",
   "leaseExpiresAtMs",
-  "retainUntilMs",
+  "reconciliationUntilMs",
 ]);
 const progressiveReservedKeys = progressiveReservationCommonKeys;
 const progressiveReleasedKeys = new Set([
@@ -999,7 +1038,7 @@ const progressiveStateRequiredKeys = new Set([
   "schemaVersion",
   "streak",
   "reservations",
-  "purgeAfterMs",
+  "hardDeleteByMs",
 ]);
 const progressiveStateKeys = new Set([
   ...progressiveStateRequiredKeys,
@@ -1047,18 +1086,18 @@ function validateProgressiveReservation(
         input.reservedAtMs,
         PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS,
       ) ||
-    !isNonnegativeSafeInteger(input.retainUntilMs) ||
-    input.retainUntilMs <= writtenAtMs
+    !isNonnegativeSafeInteger(input.reconciliationUntilMs) ||
+    input.reconciliationUntilMs <= writtenAtMs
   ) {
     return false;
   }
 
   if (status === FeedbackReservationState.RESERVED) {
     return (
-      input.retainUntilMs ===
+      input.reconciliationUntilMs ===
       safeAddMilliseconds(
         input.leaseExpiresAtMs,
-        PROGRESSIVE_COOLDOWN_RETENTION_MS,
+        PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
       )
     );
   }
@@ -1068,10 +1107,10 @@ function validateProgressiveReservation(
       isNonnegativeSafeInteger(input.releasedAtMs) &&
       input.releasedAtMs >= input.reservedAtMs &&
       input.releasedAtMs <= writtenAtMs &&
-      input.retainUntilMs ===
+      input.reconciliationUntilMs ===
         safeAddMilliseconds(
           input.releasedAtMs,
-          PROGRESSIVE_COOLDOWN_RETENTION_MS,
+          PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
         )
     );
   }
@@ -1102,29 +1141,32 @@ function validateProgressiveReservation(
     committedAtMs,
     PROGRESSIVE_COOLDOWN_RESET_MS,
   );
-  const expectedRetainUntil =
+  const expectedReconciliationUntil =
     quietResetAt === undefined
       ? undefined
       : safeAddMilliseconds(
           quietResetAt,
-          PROGRESSIVE_COOLDOWN_RETENTION_MS,
+          PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
         );
 
   return (
     input.cooldownDurationMs === expectedDuration &&
     input.cooldownUntilMs === expectedCooldownUntil &&
-    input.retainUntilMs === expectedRetainUntil
+    input.reconciliationUntilMs === expectedReconciliationUntil
   );
 }
 
-function expectedProgressivePurgeAfterMs(
+function expectedProgressiveHardDeleteByMs(
   state: FeedbackProgressiveCooldownState,
   writtenAtMs: number,
 ): number | undefined {
-  let purgeAfterMs = writtenAtMs;
+  let reconciliationHorizonMs = writtenAtMs;
 
   for (const reservation of state.reservations) {
-    purgeAfterMs = Math.max(purgeAfterMs, reservation.retainUntilMs);
+    reconciliationHorizonMs = Math.max(
+      reconciliationHorizonMs,
+      reservation.reconciliationUntilMs,
+    );
   }
 
   if (state.lastCommittedAtMs !== undefined) {
@@ -1132,27 +1174,51 @@ function expectedProgressivePurgeAfterMs(
       state.lastCommittedAtMs,
       PROGRESSIVE_COOLDOWN_RESET_MS,
     );
-    const retainUntil =
+    const reconciliationUntil =
       resetAt === undefined
         ? undefined
         : safeAddMilliseconds(
             resetAt,
-            PROGRESSIVE_COOLDOWN_RETENTION_MS,
+            PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
           );
-    if (retainUntil === undefined) return undefined;
-    purgeAfterMs = Math.max(purgeAfterMs, retainUntil);
+    if (reconciliationUntil === undefined) return undefined;
+    reconciliationHorizonMs = Math.max(
+      reconciliationHorizonMs,
+      reconciliationUntil,
+    );
   }
 
   if (state.cooldownUntilMs !== undefined) {
-    const retainUntil = safeAddMilliseconds(
+    const reconciliationUntil = safeAddMilliseconds(
       state.cooldownUntilMs,
-      PROGRESSIVE_COOLDOWN_RETENTION_MS,
+      PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
     );
-    if (retainUntil === undefined) return undefined;
-    purgeAfterMs = Math.max(purgeAfterMs, retainUntil);
+    if (reconciliationUntil === undefined) return undefined;
+    reconciliationHorizonMs = Math.max(
+      reconciliationHorizonMs,
+      reconciliationUntil,
+    );
   }
 
-  return purgeAfterMs;
+  return safeAddMilliseconds(
+    reconciliationHorizonMs,
+    PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS,
+  );
+}
+
+function expectedProgressiveTtlSeconds(
+  writtenAtMs: number,
+  hardDeleteByMs: number,
+): number {
+  return Math.max(
+    0,
+    Math.floor(
+      (hardDeleteByMs -
+        writtenAtMs -
+        PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS) /
+        MILLISECONDS_PER_SECOND,
+    ),
+  );
 }
 
 function validateCommittedSequence(
@@ -1213,7 +1279,8 @@ function validateProgressiveAggregateLifecycle(
     safeAddMilliseconds(
       input.writtenAtMs,
       PROGRESSIVE_COOLDOWN_RESET_MS +
-        PROGRESSIVE_COOLDOWN_RETENTION_MS,
+        PROGRESSIVE_COOLDOWN_RECONCILIATION_MS +
+        PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS,
     ) === undefined ||
     !isNonnegativeSafeInteger(input.ttlSeconds) ||
     !isRecord(stateRecord) ||
@@ -1229,8 +1296,8 @@ function validateProgressiveAggregateLifecycle(
     !isDenseDataArray(stateRecord.reservations) ||
     stateRecord.reservations.length >
       PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS ||
-    !isNonnegativeSafeInteger(stateRecord.purgeAfterMs) ||
-    stateRecord.purgeAfterMs < input.writtenAtMs
+    !isNonnegativeSafeInteger(stateRecord.hardDeleteByMs) ||
+    stateRecord.hardDeleteByMs < input.writtenAtMs
   ) {
     return false;
   }
@@ -1321,25 +1388,31 @@ function validateProgressiveAggregateLifecycle(
     }
   }
 
-  const expectedPurgeAfterMs = expectedProgressivePurgeAfterMs(
+  const expectedHardDeleteByMs = expectedProgressiveHardDeleteByMs(
     state,
     writtenAtMs,
   );
   if (
-    expectedPurgeAfterMs === undefined ||
-    stateRecord.purgeAfterMs !== expectedPurgeAfterMs
+    expectedHardDeleteByMs === undefined ||
+    stateRecord.hardDeleteByMs !== expectedHardDeleteByMs
   ) {
     return false;
   }
 
-  const expectedTtlSeconds = Math.max(
-    0,
-    Math.floor(
-      (stateRecord.purgeAfterMs - writtenAtMs) /
-        MILLISECONDS_PER_SECOND,
-    ),
+  const expectedTtlSeconds = expectedProgressiveTtlSeconds(
+    writtenAtMs,
+    stateRecord.hardDeleteByMs,
   );
-  return input.ttlSeconds === expectedTtlSeconds;
+  const isEmptyInactiveDeleteInstruction =
+    expectedTtlSeconds === 0 &&
+    reservations.length === 0 &&
+    streak === 0 &&
+    !hasLastCommittedAt &&
+    !hasCooldownUntil;
+  return (
+    input.ttlSeconds === expectedTtlSeconds &&
+    (expectedTtlSeconds > 0 || isEmptyInactiveDeleteInstruction)
+  );
 }
 
 type ProgressiveTransitionKind = "commit" | "release";
@@ -1429,10 +1502,15 @@ function validateProgressiveAggregateTransition(
 
   for (const existingReservation of existing.state.reservations) {
     const nextReservation = nextById.get(existingReservation.reservationId);
-    if (nextReservation === undefined) {
-      if (existingReservation.retainUntilMs > next.writtenAtMs) return false;
+    if (
+      existingReservation.reconciliationUntilMs <= next.writtenAtMs
+    ) {
+      if (nextReservation !== undefined) return false;
       pruned += 1;
       continue;
+    }
+    if (nextReservation === undefined) {
+      return false;
     }
     const result = validateProgressiveReservationTransition(
       nextReservation,
@@ -1547,8 +1625,8 @@ export const feedbackProgressiveCooldownReservationRecordShape = {
   leaseExpiresAtMs: internalMillisecondField(
     "Exact five-minute reservation lease deadline.",
   ),
-  retainUntilMs: internalMillisecondField(
-    "Exact status-specific post-expiry retention deadline.",
+  reconciliationUntilMs: internalMillisecondField(
+    "Exact status-specific six-day reconciliation-availability deadline.",
   ),
   committedAtMs: optionalInternalMillisecondField(
     "Immutable-acceptance commit epoch in milliseconds.",
@@ -1614,8 +1692,8 @@ export const feedbackProgressiveCooldownStateShape = {
     .max(PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS)
     .version("1.0")
     .description("Bounded reservation, release, and reconciliation records."),
-  purgeAfterMs: internalMillisecondField(
-    "Absolute upper-bound deletion deadline for the complete aggregate.",
+  hardDeleteByMs: internalMillisecondField(
+    "Absolute no-later-than deletion deadline ending the 24-hour purge safety window.",
   ),
 };
 
@@ -1645,7 +1723,7 @@ export const feedbackProgressiveCooldownAggregateEntityShape = {
     .required()
     .version("1.0")
     .description(
-      "Floor-rounded TTL; zero requires adapter-managed immediate expiry.",
+      "Maximum floor-rounded TTL budget ending at reconciliation expiry; zero is an empty/inactive delete instruction.",
     )
     .validator(
       (value) =>
@@ -1674,9 +1752,14 @@ export const feedbackProgressiveCooldownAggregateEntityShape = {
 /**
  * Authoritative single-row progressive bug cooldown and reservation aggregate.
  *
- * Store adapters must use a conditional write for `revision`, delete at or
- * before `state.purgeAfterMs`, and treat `ttlSeconds === 0` as immediate
- * expiry. The row contains no packet/artifact identifier or feedback content.
+ * Store adapters must use a conditional write for `revision`, start explicit
+ * deletion no later than the one-day safety boundary, and verify that live
+ * data and bounded backups are absent by `state.hardDeleteByMs`. `ttlSeconds`
+ * is a maximum budget calculated at `writtenAtMs`, not a Cosmos `ttl` value:
+ * adapters must shorten it using the trusted persistence time. A zero budget
+ * is valid only for an empty and inactive delete instruction and must never be
+ * persisted as Cosmos TTL zero. The row contains no packet/artifact identifier
+ * or feedback content.
  */
 export const feedbackProgressiveCooldownAggregateEntitySchema =
   closeFeedbackSchema(
@@ -1784,10 +1867,7 @@ export const feedbackAbuseControlEntitySchema = closeFeedbackSchema(
         );
 
         return (
-          validateLifecycle(
-            entity as Record<string, unknown>,
-            "updatedAt",
-          ) &&
+          validateControlLifecycle(entity as Record<string, unknown>) &&
           cooldownSeconds ===
             FEEDBACK_BUG_COOLDOWN_SECONDS[entity.cooldownStreak] &&
           quietResetSeconds === BUG_QUIET_RESET_SECONDS &&
@@ -1837,7 +1917,7 @@ export const feedbackReviewEligibilityEntitySchema = closeFeedbackSchema(
       piiEnforcement: "strict",
       table: "feedbackControl",
       schemaValidator: (entity) =>
-        validateLifecycle(entity as Record<string, unknown>, "updatedAt") &&
+        validateControlLifecycle(entity as Record<string, unknown>) &&
         exactSecondsBetween(entity.updatedAt, entity.denyExpiresAt) ===
           REVIEW_DENY_SECONDS &&
         entity.expiresAt === entity.denyExpiresAt,
@@ -1948,7 +2028,7 @@ export const feedbackSubmissionReservationEntitySchema =
         piiEnforcement: "strict",
         table: "feedbackControl",
         schemaValidator: (entity) =>
-          validateLifecycle(entity as Record<string, unknown>, "updatedAt"),
+          validateControlLifecycle(entity as Record<string, unknown>),
       },
     ),
     "increment",
