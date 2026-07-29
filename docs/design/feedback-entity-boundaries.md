@@ -58,7 +58,8 @@ persistence entity.
 
 ## Isolated control-plane entities
 
-`keyedSubject` has the exact wire form
+The authoritative progressive bug-control row uses `stateId` with the exact
+wire form
 `fbs1.<43 canonical unpadded base64url characters>`. This represents a 256-bit
 HMAC output scoped to the feedback-control purpose and key version. The final
 character must have zero unused pad bits, so alternate strings that decode to
@@ -67,31 +68,61 @@ address, or arbitrary opaque string does not satisfy the contract.
 
 Reservation IDs have the exact wire form
 `fbr1.<22 canonical unpadded base64url characters>`, representing 128 random
-bits with the same canonical pad-bit rule. Reservations record only the keyed
-subject, submission kind, bounded attempt count, state, revision, and expiry
-data. They intentionally have no packet or artifact identifier. A
+bits with the same canonical pad-bit rule. Each reservation also has a
+purpose-isolated canonical 256-bit idempotency digest. IDs and digests must be
+unique among at most 64 retained records in one aggregate. The aggregate
+intentionally has no packet or artifact identifier. A
 reconciliation worker may prove that an immutable packet exists through its
 own bounded outbox protocol, but it must not persist that join in the control
 entity.
 
-The accepted-bug state enforces the complete ladder
+The adapter-private envelope is:
+
+- canonical `stateId`;
+- numeric CAS `revision`;
+- server-owned `writtenAtMs`;
+- floor-rounded `ttlSeconds`; and
+- a `state` object wire-equivalent to `@plasius/api`
+  `ProgressiveCooldownState`.
+
+The state is one authoritative subject-wide CAS unit: streak, current commit
+and cooldown, all retained reservations, and `purgeAfterMs` change together.
+This prevents two independent reservation rows from bypassing capacity or
+cooldown decisions.
+
+The aggregate enforces the complete ladder
 `5m → 15m → 1h → 6h → 24h`, caps the streak at the final step, and resets its
-counter and streak only after 48 quiet hours. An accepted-bug transition must
-have a strictly later `updatedAt` and cannot occur before the current cooldown
-expires; the exact expiry instant is accepted. The review entity enforces a
-30-day deny. Updates advance their accepted counters by exactly one; a review
-cannot advance until the previous deny has expired. Reservation retries
-advance the attempt counter, while commit/release transitions preserve it.
-New reservation records must begin in `reserved` with exactly one attempt.
-Every transition preserves the original logical expiry and hard-delete
-deadline; `updatedAt`, TTL, revision, attempt count, and state may evolve only
-as their transition rules permit. Once `committed` or `released`, every entity
-field is frozen; only an exact field-for-field idempotent replay of the same
-entity is accepted.
+counter and streak only after 48 quiet hours. New reservations use an exact
+five-minute lease and may start only after any active lease and cooldown end.
+Reserved records remain for seven days after lease expiry. Released records
+remain for seven days after release. Committed records remain until exactly
+48 hours plus seven days after commit.
+
+Commit and release normally transition a reserved record. Reconciliation may
+promote a released record to committed after an independent verifier proves
+immutable acceptance. A late commit increments/caps the current streak and
+restarts the cooldown from its monotonic commit epoch, even when another
+cooldown is active. A committed record is terminal. Exact deep cloned replays
+are accepted at the same revision; every material update advances the numeric
+revision by exactly one.
+
+Reservation-array order is non-semantic. Same-millisecond commits are ordered
+for validation by commit epoch, then committed streak, then canonical
+reservation ID. Reads may encounter an otherwise valid row after its absolute
+purge deadline while physical TTL deletion converges; adapters preserve the
+original `writtenAtMs`, parse the state, and prune expired records before any
+next CAS. A newly written row never carries a reservation whose retention
+deadline is at or before its write epoch.
+
+The review entity remains a distinct 30-day deny overlay. It cannot be joined
+to the bug aggregate. The earlier `feedbackAbuseControlEntitySchema` and
+`feedbackSubmissionReservationEntitySchema` are deprecated compatibility
+projections: they may support migration reads but are not authoritative for
+new writes.
 
 All control fields are marked internal and public serialization emits only the
-schema `type` and `version`. The keyed subject is additionally classified as
-pseudonymous personal data with redacted log handling.
+schema `type` and `version`. The state ID and complete aggregate state are
+classified as pseudonymous personal data with redacted log handling.
 
 ## Expiry and deletion
 
@@ -108,6 +139,19 @@ days later. For mutable records, `ttlSeconds` must equal
 `hardDeleteAt - createdAt`. Writers must set `updatedAt`, TTL, and the
 conditional revision atomically so an update cannot extend data beyond its
 declared deadline accidentally.
+
+The progressive aggregate uses millisecond epochs because it persists the
+`@plasius/api` state without translation. Its `purgeAfterMs` is exactly the
+maximum of every retained reservation deadline, the latest commit plus
+48 hours plus seven days, and the cooldown deadline plus seven days. Its
+relative TTL is:
+
+`max(0, floor((purgeAfterMs - writtenAtMs) / 1000))`.
+
+Flooring can delete up to 999 milliseconds early but never retains data beyond
+the absolute deadline. A zero value is an immediate-expiry instruction, not
+"TTL disabled". Adapters must reject `writtenAtMs > purgeAfterMs` and must not
+allow soft-delete, versions, or backups to survive `purgeAfterMs`.
 
 The storage implementation remains responsible for configuring live data,
 soft-delete, versioning, and backup retention so they honour `hardDeleteAt`.
@@ -128,6 +172,12 @@ The schemas reject:
   aliases;
 - reservation retention extension, invalid initial attempt counts, terminal
   reservation mutation, or creation directly in a terminal state;
+- duplicate aggregate reservation IDs/idempotency digests, more than 64
+  retained records, multiple active leases, sparse arrays, nested accessors,
+  corrupt commit sequences, premature pruning, or a next reservation before
+  cooldown expiry;
+- aggregate CAS skips/stale updates, non-exact purge calculations, TTL
+  round-up, and changes to committed records other than exact replay;
 - changes to immutable artifact fields;
 - resurrection of committed or released reservations;
 - mismatched TTL/deadline arithmetic; and

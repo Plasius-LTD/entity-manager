@@ -46,17 +46,17 @@ window or checkpoint identifiers.
 
 Reporter controls are separate schemas for:
 
-- accepted bug count, cooldown streak, cooldown expiry, and quiet-reset expiry;
-- accepted review count and review-deny expiry; and
-- reservation/commit/release state.
+- one authoritative progressive bug cooldown/reservation aggregate; and
+- accepted review count and review-deny expiry.
 
-A control subject is exactly a versioned, canonical unpadded base64url
+A control state ID is exactly a versioned, canonical unpadded base64url
 HMAC-SHA-256 token. A reservation ID is exactly a versioned, canonical
-unpadded base64url 128-bit random token. Validators require zero unused pad
-bits so multiple textual aliases cannot represent the same token. Control
-entities contain no packet or artifact ID, so the pseudonym boundary cannot be
-joined to content through these contracts. Every control field is internal;
-the keyed subject is marked as pseudonymous personal data and redacted for
+unpadded base64url 128-bit random token and its idempotency digest is a
+canonical 256-bit value. Validators require zero unused pad bits so multiple
+textual aliases cannot represent the same token. Control entities contain no
+packet or artifact ID, so the pseudonym boundary cannot be joined to content
+through these contracts. Every control field is internal; the state ID and
+complete aggregate are marked as pseudonymous personal data and redacted for
 logging.
 
 Every feedback schema rejects unknown top-level fields before normal schema
@@ -64,27 +64,39 @@ validation. It returns a fixed error without echoing a field value. Lifecycle
 validation binds TTL to an absolute hard-delete deadline and limits retention
 after logical expiry to seven days.
 
-The abuse entity validates the fixed `5m → 15m → 1h → 6h → 24h` ladder and
-48-hour quiet reset. It accepts the next bug only at or after the current
-cooldown expiry and requires a strictly monotonic update time. The review
-entity validates a 30-day deny. Conditional updates advance accepted counters
-by exactly one, and reservation retries advance only their bounded attempt
-counter.
+The aggregate stores the wire-exact `@plasius/api`
+`ProgressiveCooldownState` inside an adapter-private row envelope. It validates
+the fixed `5m → 15m → 1h → 6h → 24h` ladder, a five-minute reservation lease,
+48-hour quiet reset, seven-day post-expiry retention, at most 64 unique
+reservation/idempotency pairs, and an exact absolute purge deadline. A new
+reservation starts only after active leases and cooldowns end.
 
-Reservation creation is valid only in `reserved` with exactly one attempt.
-Every transition preserves the original logical expiry and hard-delete
-deadline. A transition may commit or release the reservation, after which all
-entity fields—including revision and every expiry or TTL value—are immutable.
-Exact no-op replay remains valid for idempotency.
+Reserved records may release or commit. A released record may later commit
+when reconciliation independently proves immutable acceptance. That late
+commit advances/caps the current streak and restarts its cooldown; no packet
+identifier is persisted. Committed records are terminal. Exact deep replay is
+valid without a revision increment; a material CAS update advances by exactly
+one. Reservation-array order is non-semantic, and same-millisecond commits are
+valid. The adapter losslessly stringifies the numeric row revision for the
+opaque `@plasius/api` snapshot revision.
+
+The row TTL floors the remaining milliseconds to avoid retention after
+`purgeAfterMs`; a zero TTL means immediate adapter deletion. Live data,
+soft-deleted versions, and backups must all be gone by the absolute deadline.
+The review entity separately validates a 30-day deny.
+
+The previous per-subject abuse and per-reservation schemas remain deprecated
+exports for source-compatible migration only. They are not authoritative
+because independent rows cannot atomically enforce subject-wide capacity,
+cooldown, or released-to-committed reconciliation.
 
 ## Integrity and availability
 
 New mutable state starts at revision zero. Updates validated against an
-existing entity must advance by exactly one, except an exact idempotent replay
-of a terminal reservation. Committed and released reservations are otherwise
-fully immutable. Storage adapters must combine this contract with ETag or
-transactional conditional writes; schema revision validation alone does not
-provide distributed atomicity.
+existing entity must advance by exactly one, except an exact idempotent replay.
+Storage adapters must combine this contract with ETag or transactional
+conditional writes; schema revision validation alone does not provide
+distributed atomicity.
 
 Callers must distinguish an available empty read from an unavailable control
 store. An unavailable store fails closed. The `@plasius/api` reservation and
