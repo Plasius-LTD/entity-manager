@@ -14,12 +14,18 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Added actor-free packet, report, checkpoint, and safe-reconstruction
     metadata plus isolated abuse, review-eligibility, and reservation control
     entities for privacy-safe feedback.
+  - Added the authoritative single-row progressive-cooldown aggregate that
+    persists the wire-exact `@plasius/api` state with canonical IDs, bounded
+    reservations, exact default policy/retention, CAS revisions, and safe
+    released-to-committed reconciliation.
 
 - **Changed**
   - Split package release preparation and publication into separate exact-main
     `cd.yml` runs so the npm provenance commit matches the released source.
   - Land release metadata through immutable per-attempt pull-request branches
     and isolate preparation from SHA-bound publication concurrency.
+  - Deprecated the non-atomic abuse and per-reservation feedback projections
+    for new writes; review eligibility remains a separate control entity.
 
 - **Fixed**
   - (placeholder)
@@ -40,6 +46,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     disabled.
   - Bound duplicate-publication recovery and GitHub release finalization to
     npm's exact SHA-512 package integrity and version-derived distribution tag.
+  - Reject nested unknown/accessor/sparse control data, duplicate identifiers,
+    corrupt timelines, TTL extension, and packet/content joins; redact the
+    complete pseudonymous aggregate from serialization and logs.
 
 ## [1.0.25] - 2026-07-28
 

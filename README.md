@@ -91,13 +91,20 @@ console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
   `systemManagedFeedbackCheckpointEntitySchema`, and
   `systemManagedFeedbackReconstructionEntitySchema`
 - Isolated reporter controls:
-  `feedbackAbuseControlEntitySchema`,
+  `feedbackProgressiveCooldownAggregateEntitySchema` and
   `feedbackReviewEligibilityEntitySchema`, and
+  the deprecated compatibility projections
+  `feedbackAbuseControlEntitySchema` and
   `feedbackSubmissionReservationEntitySchema`
 - Closed constants:
   `FeedbackArtifactKind`, `FeedbackProcessor`,
   `FeedbackSubmissionKind`, `FeedbackReservationState`,
-  `FEEDBACK_BUG_COOLDOWN_SECONDS`, and `FEEDBACK_REVIEW_DENY_SECONDS`
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_LADDER_MS`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_RETENTION_MS`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS`, and
+  `FEEDBACK_REVIEW_DENY_SECONDS`
 
 Feedback content metadata deliberately does not extend `BaseEntity`: system
 artifacts have no `createdBy`, `updatedBy`, or `deletedBy` identity. Reporter
@@ -109,34 +116,56 @@ account subjects, narrative, pixels, network metadata, and arbitrary extra
 fields are rejected.
 
 All reporter-control fields are internal, so default serialization exposes no
-pseudonym, reservation, counter, or expiry. Reservation state has no packet ID
-and therefore cannot create a durable join from the pseudonymous control plane
-to identifier-free content.
+pseudonym, reservation, counter, or expiry. The aggregate state ID and its
+complete state are also redacted by log sanitization. Reservation state has no
+packet ID and therefore cannot create a durable join from the pseudonymous
+control plane to identifier-free content.
 
-Mutable controls and checkpoints start at revision zero. Validate updates with
-the current record:
+The progressive bug controller is persisted as one authoritative row per
+canonical `fbs1.*` state ID. Its nested `state` is wire-equivalent to
+`@plasius/api` `ProgressiveCooldownState`; the envelope adds only the row ID,
+numeric CAS revision, server write epoch, and deletion TTL. Validate updates
+with the current row:
 
 ```ts
-const validation = feedbackAbuseControlEntitySchema.validate(next, current);
+const validation =
+  feedbackProgressiveCooldownAggregateEntitySchema.validate(next, current);
 ```
 
 The next revision must be exactly `current.revision + 1`. Persistence must also
 use an ETag or transactional condition; schema validation is not a substitute
 for an atomic storage write.
 
-Each entity binds a whole-second TTL to `hardDeleteAt`. The deadline must be no
-more than seven days after logical expiry. Writers must update the timestamp,
-TTL, and revision atomically. See
+The aggregate enforces unique canonical reservation IDs and idempotency
+digests, at most 64 retained records, one active lease, the exact five-minute
+lease, the `5m → 15m → 1h → 6h → 24h` ladder, a 48-hour quiet reset, and seven
+days of post-expiry control retention. A released reservation may become
+committed during reconciliation after immutable acceptance is independently
+verified; this restarts the cooldown without creating a packet/content join.
+Exact cloned replays are accepted without advancing the CAS revision.
+
+`state.purgeAfterMs` is the absolute upper-bound deletion deadline and is
+recomputed exactly from every retained record and active cooldown/reset
+horizon. `ttlSeconds` is the floor of the remaining milliseconds so a
+whole-second TTL can delete slightly early but never late. A zero TTL requires
+adapter-managed immediate expiry. Soft-delete, versions, and backups must also
+be absent by `purgeAfterMs`; a database TTL alone is insufficient.
+
+The earlier per-subject abuse and per-reservation schemas remain exported only
+for source-compatible migration. They cannot atomically enforce aggregate
+capacity or released-to-committed reconciliation and must not be used for new
+writes. Review eligibility remains a separate 30-day overlay and is never
+folded into the bug aggregate.
+
+Other feedback entities bind a whole-second TTL to `hardDeleteAt`. The deadline
+must be no more than seven days after logical expiry. Writers must update the
+timestamp, TTL, and revision atomically. See
 [ADR-0006](./docs/adrs/adr-0006-feedback-system-and-control-entities.md) and the
 [feedback entity boundary design](./docs/design/feedback-entity-boundaries.md).
 
-The abuse contract validates `5m → 15m → 1h → 6h → 24h` cooldowns and a
-48-hour quiet reset. A subsequent accepted bug requires a strictly later
-timestamp at or after the current cooldown expiry. The review contract
-validates an exact 30-day deny. Reservations must be created as `reserved`
-with exactly one attempt and cannot extend their original logical expiry or
-hard-delete deadline. `committed` and `released` records accept only an exact
-no-op replay.
+The review contract validates an exact 30-day deny. The deprecated abuse and
+per-reservation projections retain their previous validation behaviour only
+for migration compatibility.
 
 Report/checkpoint windows use closed purpose-specific UTC keys:
 `hour:YYYY-MM-DDTHH`, `day:YYYY-MM-DD`, or a five-minute
