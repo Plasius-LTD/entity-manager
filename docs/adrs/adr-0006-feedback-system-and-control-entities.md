@@ -61,15 +61,16 @@ logging.
 
 Every feedback schema rejects unknown top-level fields before normal schema
 validation. It returns a fixed error without echoing a field value. Lifecycle
-validation binds TTL to an absolute hard-delete deadline and limits retention
-after logical expiry to seven days.
+validation binds TTL to an absolute hard-delete deadline and limits the total
+privacy lifetime after logical expiry to seven days.
 
 The aggregate stores the wire-exact `@plasius/api`
 `ProgressiveCooldownState` inside an adapter-private row envelope. It validates
 the fixed `5m → 15m → 1h → 6h → 24h` ladder, a five-minute reservation lease,
-48-hour quiet reset, seven-day post-expiry retention, at most 64 unique
-reservation/idempotency pairs, and an exact absolute purge deadline. A new
-reservation starts only after active leases and cooldowns end.
+48-hour quiet reset, six-day post-expiry reconciliation, at most 64 unique
+reservation/idempotency pairs, and an exact absolute purge deadline one day
+after the final reconciliation horizon. A new reservation starts only after
+active leases and cooldowns end.
 
 Reserved records may release or commit. A released record may later commit
 when reconciliation independently proves immutable acceptance. That late
@@ -77,13 +78,31 @@ commit advances/caps the current streak and restarts its cooldown; no packet
 identifier is persisted. Committed records are terminal. Exact deep replay is
 valid without a revision increment; a material CAS update advances by exactly
 one. Reservation-array order is non-semantic, and same-millisecond commits are
-valid. The adapter losslessly stringifies the numeric row revision for the
-opaque `@plasius/api` snapshot revision.
+valid. Exact replay validates the stored row's closed top-level shape as well
+as the submitted row, so a legacy or corrupt identity/join field cannot bypass
+validation. The adapter losslessly stringifies the numeric row revision for
+the opaque `@plasius/api` snapshot revision.
 
-The row TTL floors the remaining milliseconds to avoid retention after
-`purgeAfterMs`; a zero TTL means immediate adapter deletion. Live data,
-soft-deleted versions, and backups must all be gone by the absolute deadline.
-The review entity separately validates a 30-day deny.
+Each record's `reconciliationUntilMs` is its live six-day reconciliation
+cutoff. The row's `hardDeleteByMs` is the latest record or active
+cooldown/reset reconciliation horizon plus exactly one day. The row TTL budget
+floors the interval ending at that reconciliation horizon. The following day
+is reserved for explicit conditional deletion, verification, and expiry of the
+isolated control boundary's short backup window. Zero TTL is valid only for an
+empty and inactive delete instruction.
+
+Because Cosmos TTL starts from database `_ts`, adapters shorten the budget
+again at actual persistence time. They issue a delete when no positive duration
+remains and never write invalid Cosmos TTL zero. Live data, soft-deleted
+versions, and backups must all be gone by the absolute deadline; TTL is only
+defence in depth because Cosmos TTL starts at the last database modification
+and physical deletion is asynchronous
+([Azure TTL behaviour](https://learn.microsoft.com/en-us/azure/cosmos-db/time-to-live)).
+The isolated feedback-control boundary must consequently use a restore horizon
+of at most 24 hours and is excluded from continuous seven-/thirty-day and
+long-term backup products. The same safety budget applies to the review deny
+and deprecated control projections; the review entity separately validates an
+exact 30-day deny.
 
 The previous per-subject abuse and per-reservation schemas remain deprecated
 exports for source-compatible migration only. They are not authoritative

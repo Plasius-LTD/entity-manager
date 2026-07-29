@@ -86,7 +86,7 @@ The adapter-private envelope is:
   `ProgressiveCooldownState`.
 
 The state is one authoritative subject-wide CAS unit: streak, current commit
-and cooldown, all retained reservations, and `purgeAfterMs` change together.
+and cooldown, all retained reservations, and `hardDeleteByMs` change together.
 This prevents two independent reservation rows from bypassing capacity or
 cooldown decisions.
 
@@ -94,9 +94,12 @@ The aggregate enforces the complete ladder
 `5m → 15m → 1h → 6h → 24h`, caps the streak at the final step, and resets its
 counter and streak only after 48 quiet hours. New reservations use an exact
 five-minute lease and may start only after any active lease and cooldown end.
-Reserved records remain for seven days after lease expiry. Released records
-remain for seven days after release. Committed records remain until exactly
-48 hours plus seven days after commit.
+Reserved records remain available for reconciliation for exactly six days
+after lease expiry. Released records remain available for six days after
+release. Committed records remain available until exactly 48 hours plus six
+days after commit. A separate final 24-hour safety window permits verified
+deletion and bounded backup expiry without exceeding the seven-day
+post-logical-expiry privacy deadline.
 
 Commit and release normally transition a reserved record. Reconciliation may
 promote a released record to committed after an independent verifier proves
@@ -111,8 +114,10 @@ for validation by commit epoch, then committed streak, then canonical
 reservation ID. Reads may encounter an otherwise valid row after its absolute
 purge deadline while physical TTL deletion converges; adapters preserve the
 original `writtenAtMs`, parse the state, and prune expired records before any
-next CAS. A newly written row never carries a reservation whose retention
-deadline is at or before its write epoch.
+next CAS. A newly written row never carries a reservation whose
+`reconciliationUntilMs` is at or before its write epoch. If one record expires
+before another, the CAS removes only the expired record and preserves a
+positive TTL through the later record's reconciliation horizon.
 
 The review entity remains a distinct 30-day deny overlay. It cannot be joined
 to the bug aggregate. The earlier `feedbackAbuseControlEntitySchema` and
@@ -130,28 +135,45 @@ Every entity records:
 
 - the time at which the state or artifact stops being live;
 - an absolute hard-delete deadline;
-- a whole-second storage TTL ending exactly at that hard-delete deadline; and
+- a whole-second storage TTL bounded by that hard-delete deadline; and
 - the timestamp from which that TTL was calculated.
 
-The hard-delete deadline may be equal to logical expiry and may be at most seven
-days later. For mutable records, `ttlSeconds` must equal
-`hardDeleteAt - updatedAt`; for immutable artifacts it must equal
-`hardDeleteAt - createdAt`. Writers must set `updatedAt`, TTL, and the
-conditional revision atomically so an update cannot extend data beyond its
-declared deadline accidentally.
+For identifier-free artifacts the hard-delete deadline may equal logical
+expiry and may be at most seven days later. Pseudonymous mutable controls
+require at least 24 hours and at most seven days between logical expiry and
+hard deletion. Their `ttlSeconds` must equal
+`hardDeleteAt - updatedAt - 24 hours`; the resulting expiry can never predate
+the time the control stops affecting eligibility. The budget must remain
+positive or the adapter deletes instead of writing. Identifier-free immutable
+artifacts and checkpoints use the full interval from the creation/update anchor
+to `hardDeleteAt`. Writers must set `updatedAt`, TTL budget, and the conditional
+revision atomically so an update cannot extend data beyond its declared
+deadline accidentally.
 
 The progressive aggregate uses millisecond epochs because it persists the
-`@plasius/api` state without translation. Its `purgeAfterMs` is exactly the
-maximum of every retained reservation deadline, the latest commit plus
-48 hours plus seven days, and the cooldown deadline plus seven days. Its
-relative TTL is:
+`@plasius/api` state without translation. Each record's
+`reconciliationUntilMs` is its six-day availability cutoff. The aggregate's
+`hardDeleteByMs` is exactly 24 hours after the maximum of every retained
+reconciliation deadline, the latest commit plus 48 hours plus six days, and
+the cooldown deadline plus six days. Its maximum relative TTL budget is:
 
-`max(0, floor((purgeAfterMs - writtenAtMs) / 1000))`.
+`max(0, floor((hardDeleteByMs - writtenAtMs - 24 hours) / 1000))`.
 
-Flooring can delete up to 999 milliseconds early but never retains data beyond
-the absolute deadline. A zero value is an immediate-expiry instruction, not
-"TTL disabled". Adapters must reject `writtenAtMs > purgeAfterMs` and must not
-allow soft-delete, versions, or backups to survive `purgeAfterMs`.
+This formula expires the live row at the final reconciliation horizon. A zero
+value is valid only for an empty, inactive delete instruction; it is invalid
+when any record, streak, last commit, or cooldown remains. The final 24 hours
+between live-row expiry and `hardDeleteByMs` are a purge safety window, not
+additional reconciliation availability.
+Adapters must begin explicit conditional deletion, verify absence, and allow
+the separately bounded backup window to expire before the absolute deadline.
+Because Cosmos TTL is relative to database `_ts`, the envelope budget must be
+shortened using trusted time at persistence and must never be copied blindly
+into the Cosmos `ttl` field. A zero value is an immediate-delete instruction,
+not "TTL disabled", and must never be persisted as Cosmos TTL zero. Adapters
+must reject `writtenAtMs > hardDeleteByMs` and must not allow soft-delete,
+versions, or backups to survive `hardDeleteByMs`.
+The feedback-control boundary's restore horizon is at most 24 hours; it is not
+eligible for continuous seven-/thirty-day or long-term backup replication.
 
 The storage implementation remains responsible for configuring live data,
 soft-delete, versioning, and backup retention so they honour `hardDeleteAt`.

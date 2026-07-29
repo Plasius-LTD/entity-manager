@@ -16,7 +16,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     entities for privacy-safe feedback.
   - Added the authoritative single-row progressive-cooldown aggregate that
     persists the wire-exact `@plasius/api` state with canonical IDs, bounded
-    reservations, exact default policy/retention, CAS revisions, and safe
+    reservations, six-day reconciliation windows, CAS revisions, and safe
     released-to-committed reconciliation.
 
 - **Changed**
@@ -49,6 +49,13 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Reject nested unknown/accessor/sparse control data, duplicate identifiers,
     corrupt timelines, TTL extension, and packet/content joins; redact the
     complete pseudonymous aggregate from serialization and logs.
+  - Reserve a 24-hour hard-purge safety window, require persistence-time TTL
+    shortening and explicit deletion verification, and prevent expired
+    reservations from being transitioned or resurrected.
+  - Separate per-record `reconciliationUntilMs` from aggregate
+    `hardDeleteByMs`, reject zero TTL while any control state remains, preserve
+    later records when one reconciliation window expires, and reject exact
+    replays against stored rows containing unknown identity/join fields.
 
 ## [1.0.25] - 2026-07-28
 
