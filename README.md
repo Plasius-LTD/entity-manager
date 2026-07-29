@@ -194,7 +194,7 @@ lifecycle budget. A control hard-delete deadline must be between one and seven
 days after logical expiry so the safety budget never removes an effective
 cooldown or eligibility overlay. Writers must update the timestamp, TTL budget,
 and revision atomically. See
-[ADR-0006](./docs/adrs/adr-0006-feedback-system-and-control-entities.md) and the
+[ADR-0008](./docs/adrs/adr-0008-feedback-system-and-control-entities.md) and the
 [feedback entity boundary design](./docs/design/feedback-entity-boundaries.md).
 
 The review contract validates an exact 30-day deny. The deprecated abuse and

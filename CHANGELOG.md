@@ -21,12 +21,35 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Changed**
   - (placeholder)
+  - Deprecated the non-atomic abuse and per-reservation feedback projections
+    for new writes; review eligibility remains a separate control entity.
 
 - **Fixed**
   - (placeholder)
 
 - **Security**
   - (placeholder)
+  - Reject nested unknown/accessor/sparse control data, duplicate identifiers,
+    corrupt timelines, TTL extension, and packet/content joins; redact the
+    complete pseudonymous aggregate from serialization and logs.
+  - Reserve a 24-hour hard-purge safety window, require persistence-time TTL
+    shortening and explicit deletion verification, and prevent expired
+    reservations from being transitioned or resurrected.
+  - Separate per-record `reconciliationUntilMs` from aggregate
+    `hardDeleteByMs`, reject zero TTL while any control state remains, preserve
+    later records when one reconciliation window expires, and reject exact
+    replays against stored rows containing unknown identity/join fields.
+  - Feedback entity validation rejects unknown fields, raw account subjects,
+    narrative/network metadata, actor audit IDs, cross-boundary packet
+    correlation, stale revisions, and retention deadlines more than seven
+    days after logical expiry.
+  - Report/checkpoint keys use purpose-specific canonical UTC grammars; keyed
+    subjects and reservation IDs reject non-canonical base64url aliases; and
+    terminal reservations reject every mutation while permitting exact
+    idempotent replay.
+  - Accepted-bug transitions reject active-cooldown and non-monotonic updates;
+    reservations start at one attempt and cannot extend their original
+    logical expiry or hard-delete deadline.
 
 ## [1.0.27] - 2026-08-09
 
@@ -59,8 +82,6 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     `cd.yml` runs so the npm provenance commit matches the released source.
   - Land release metadata through immutable per-attempt pull-request branches
     and isolate preparation from SHA-bound publication concurrency.
-  - Deprecated the non-atomic abuse and per-reservation feedback projections
-    for new writes; review eligibility remains a separate control entity.
 
 - **Fixed**
   - Re-established exact-main package releases by preserving GitHub App
@@ -84,16 +105,6 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     disabled.
   - Bound duplicate-publication recovery and GitHub release finalization to
     npm's exact SHA-512 package integrity and version-derived distribution tag.
-  - Reject nested unknown/accessor/sparse control data, duplicate identifiers,
-    corrupt timelines, TTL extension, and packet/content joins; redact the
-    complete pseudonymous aggregate from serialization and logs.
-  - Reserve a 24-hour hard-purge safety window, require persistence-time TTL
-    shortening and explicit deletion verification, and prevent expired
-    reservations from being transitioned or resurrected.
-  - Separate per-record `reconciliationUntilMs` from aggregate
-    `hardDeleteByMs`, reject zero TTL while any control state remains, preserve
-    later records when one reconciliation window expires, and reject exact
-    replays against stored rows containing unknown identity/join fields.
 
 ## [1.0.25] - 2026-07-28
 
@@ -162,17 +173,6 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     a resolver audit identity.
   - Reject self-created managed-child records, assurance invalid at account
     creation, and closed claim histories with inconsistent lifecycle ordering.
-  - Feedback entity validation now rejects unknown fields, raw account
-    subjects, narrative/network metadata, actor audit IDs, cross-boundary
-    packet correlation, stale revisions, and retention deadlines more than
-    seven days after logical expiry.
-  - Report/checkpoint keys now use purpose-specific canonical UTC grammars;
-    keyed subjects and reservation IDs reject non-canonical base64url aliases;
-    and terminal reservations reject every mutation while permitting exact
-    idempotent replay.
-  - Accepted-bug transitions now reject active-cooldown and non-monotonic
-    updates; reservations start at one attempt and cannot extend their original
-    logical expiry or hard-delete deadline.
 
 ## [1.0.23] - 2026-07-13
 

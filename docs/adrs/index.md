@@ -7,4 +7,4 @@
 - [ADR-0005: Separate platform, group, and professional authority contracts](./adr-0005-platform-group-and-professional-authority-contracts.md)
 - [ADR-0006: Exact-main OIDC trusted package publishing](./adr-0006-oidc-trusted-package-publishing.md)
 - [ADR-0007: User names carry explicit completeness](./adr-0007-explicit-user-name-completeness.md)
-- [ADR-0006: Separate system feedback entities from reporter controls](./adr-0006-feedback-system-and-control-entities.md)
+- [ADR-0008: Separate system feedback entities from reporter controls](./adr-0008-feedback-system-and-control-entities.md)
