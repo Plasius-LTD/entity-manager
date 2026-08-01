@@ -1,10 +1,21 @@
-import { createSchema, field, type Infer, validateName } from "@plasius/schema";
+import {
+  createSchema,
+  field,
+  type Infer,
+  validateDisplayName,
+  validateName,
+} from "@plasius/schema";
 
 export enum PreferredDisplayOrder {
   FIRST_NAME = "first_name",
   LAST_NAME = "last_name",
   MIDDLE_NAME = "middle_name",
   DISPLAY_NAME = "display_name",
+}
+
+export enum UserNameStatus {
+  COMPLETE = "complete",
+  INCOMPLETE = "incomplete",
 }
 
 export const userNameShape = {
@@ -46,12 +57,19 @@ export const userNameShape = {
     .string()
     .description("User's display name (may differ from legal name)")
     .version("1.0")
-    .validator(validateName)
+    .validator(validateDisplayName)
     .PID({
       classification: "high",
       logHandling: "redact",
       action: "encrypt",
     }),
+
+  status: field
+    .string()
+    .description("Whether the personal name has been completed by the user")
+    .version("1.0")
+    .optional()
+    .enum([...Object.values(UserNameStatus)]),
 
   preferredDisplayOrder: field
     .string()

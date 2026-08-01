@@ -30,6 +30,7 @@ npm install @plasius/entity-manager
 import {
   userEntitySchema,
   PreferredDisplayOrder,
+  UserNameStatus,
 } from "@plasius/entity-manager";
 
 const user = {
@@ -40,6 +41,7 @@ const user = {
     firstName: "Alice",
     lastName: "Lovelace",
     displayName: "Alice L.",
+    status: UserNameStatus.COMPLETE,
     preferredDisplayOrder: PreferredDisplayOrder.DISPLAY_NAME,
   },
 };
@@ -49,6 +51,13 @@ if (!result.valid) {
   console.error(result.errors);
 }
 ```
+
+`UserName.status` is optional for backwards compatibility. An omitted status is
+treated as complete. Identity/profile services can set
+`UserNameStatus.INCOMPLETE` when schema-safe provider placeholders are awaiting
+user review. Display names use the dedicated shared display-name validator and
+may contain Unicode decimal digits; first, middle, and last names retain the
+stricter personal-name validator.
 
 ### Editable Profile Validation Translations
 
@@ -91,7 +100,7 @@ console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
   `editableUserProfileValidationTranslationKeys`,
   `entityManagerEnGbTranslations`, `translateEditableUserProfileValidationText`
 - `settingsEntitySchema`, `permissionsEntitySchema`, `featureFlagEntitySchema`, `roleEntitySchema`
-- Enums: `PreferredDisplayOrder`, `UserEmailPreferences`, `UserNotificationPreferences`, `Role`, `Scope`
+- Enums: `PreferredDisplayOrder`, `UserNameStatus`, `UserEmailPreferences`, `UserNotificationPreferences`, `Role`, `Scope`
 
 Consumers that only need the permission scope contract should use the
 registration-free package subpath:

@@ -14,7 +14,7 @@ export {
   UserNotificationPreferences,
   userEntitySchema,
 } from "./user.entity.js";
-export { PreferredDisplayOrder } from "./user.name.js";
+export { PreferredDisplayOrder, UserNameStatus } from "./user.name.js";
 export {
   featureFlagEntitySchema,
   featureFlagEntityShape,

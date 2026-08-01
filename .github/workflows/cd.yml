@@ -658,7 +658,7 @@ jobs:
             exit 1
           fi
 
-          if ! tar -tzf "${TARBALL}" | grep -Eq '^package/dist(/|$)'; then
+          if ! tar -tzf "${TARBALL}" | grep -E '^package/dist(/|$)' >/dev/null; then
             echo "Package tarball is missing built dist output." >&2
             exit 1
           fi
@@ -877,7 +877,7 @@ jobs:
           set -euo pipefail
 
           PUBLISH_ARGS=(--access public --provenance --registry https://registry.npmjs.org --tag "${DIST_TAG}")
-          npm publish "${TARBALL}" --ignore-scripts "${PUBLISH_ARGS[@]}"
+          npm publish "./${TARBALL}" --ignore-scripts "${PUBLISH_ARGS[@]}"
 
       - name: Skip duplicate npm publication
         if: steps.release.outputs.should_publish_npm != 'true'
