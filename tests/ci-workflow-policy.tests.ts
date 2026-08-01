@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const readWorkflow = (name: string): string =>
@@ -100,6 +101,9 @@ describe("workflow trust boundaries", () => {
   });
 
   it("lands release metadata through a unique non-force-pushed pull request", () => {
+    expect(releasePrepareWorkflow).toMatch(
+      /- name: Checkout main[\s\S]*?persist-credentials: false/u,
+    );
     expect(releasePrepareWorkflow).not.toContain(
       'git push origin "HEAD:${BASE_BRANCH}"',
     );
@@ -113,6 +117,22 @@ describe("workflow trust boundaries", () => {
     expect(releasePrepareWorkflow.match(/npm version .*--ignore-scripts/gu)).toHaveLength(
       2,
     );
+  });
+
+  it("executes stable release identity derivation on the release runtime", () => {
+    const scriptMatch = releasePrepareWorkflow.match(
+      /EFFECTIVE_PREID=\$\(TARGET_VER="\$\{MAIN_VERSION\}" node -e '\n([\s\S]*?)\n\s+'\)/u,
+    );
+    expect(scriptMatch).not.toBeNull();
+
+    const result = spawnSync(process.execPath, ["-e", scriptMatch?.[1] ?? ""], {
+      encoding: "utf8",
+      env: { ...process.env, TARGET_VER: "1.0.26" },
+    });
+
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("");
   });
 
   it("derives and binds the npm distribution tag to the prepared version", () => {
@@ -239,8 +259,22 @@ describe("workflow trust boundaries", () => {
       true,
     );
     expect(privilegedJob).toContain(
-      'npm publish "${TARBALL}" --ignore-scripts',
+      'npm publish "./${TARBALL}" --ignore-scripts',
     );
     expect(privilegedJob).toContain('--tag "${DIST_TAG}"');
+  });
+
+  it("reads the complete tar listing when pipefail is enabled", () => {
+    expect(cdWorkflow).toContain(
+      `tar -tzf "\${TARBALL}" | grep -E '^package/dist(/|$)' >/dev/null`,
+    );
+    expect(cdWorkflow).not.toContain(
+      `tar -tzf "\${TARBALL}" | grep -Eq '^package/dist(/|$)'`,
+    );
+  });
+
+  it("publishes the sealed artifact as an explicit local tarball", () => {
+    expect(cdWorkflow).toContain(`npm publish "./\${TARBALL}"`);
+    expect(cdWorkflow).not.toContain(`npm publish "\${TARBALL}"`);
   });
 });

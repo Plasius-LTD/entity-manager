@@ -12,6 +12,7 @@ import {
   Role,
   Scope,
   EntityTypes,
+  UserNameStatus,
   editableUserProfileFieldTranslationKeys,
   editableUserProfileValidationTranslationKeys,
   entityManagerEnGbTranslations,
@@ -125,6 +126,65 @@ describe("userEntitySchema", () => {
   it("validates a minimal user entity", () => {
     const result = userEntitySchema.validate(baseUser);
     expect(result.valid).toBe(true);
+  });
+
+  it("accepts explicit incomplete names while preserving legacy omission", () => {
+    expect(userEntitySchema.validate(baseUser).valid).toBe(true);
+    expect(userEntitySchema.validate({
+      ...baseUser,
+      name: {
+        ...baseUser.name,
+        status: UserNameStatus.INCOMPLETE,
+      },
+    }).valid).toBe(true);
+  });
+
+  it("rejects unsupported name status values", () => {
+    const result = userEntitySchema.validate({
+      ...baseUser,
+      name: {
+        ...baseUser.name,
+        status: "pending",
+      },
+    });
+
+    expect(result.valid).toBe(false);
+  });
+
+  it("allows digits in display names but not personal-name fields", () => {
+    expect(userEntitySchema.validate({
+      ...baseUser,
+      name: {
+        ...baseUser.name,
+        displayName: "Player 2",
+      },
+    }).valid).toBe(true);
+
+    expect(userEntitySchema.validate({
+      ...baseUser,
+      name: {
+        ...baseUser.name,
+        firstName: "Player2",
+      },
+    }).valid).toBe(false);
+  });
+
+  it("uses the same display-name distinction for editable profiles", () => {
+    expect(validateEditableUserProfile({
+      ...baseUser,
+      name: {
+        ...baseUser.name,
+        displayName: "Player 2",
+      },
+    }).valid).toBe(true);
+
+    expect(validateEditableUserProfile({
+      ...baseUser,
+      name: {
+        ...baseUser.name,
+        firstName: "Player2",
+      },
+    }).valid).toBe(false);
   });
 
   it("rejects an invalid email", () => {

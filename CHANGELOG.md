@@ -10,16 +10,24 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Added optional `UserName.status` metadata with explicit complete and
+    incomplete values while preserving legacy profiles that omit it for task
+    #52.
 
 - **Changed**
+  - Display names now use the dedicated shared display-name validator and may
+    contain Unicode decimal digits; first, middle, and last names retain
+    personal-name validation.
   - Split package release preparation and publication into separate exact-main
     `cd.yml` runs so the npm provenance commit matches the released source.
   - Land release metadata through immutable per-attempt pull-request branches
     and isolate preparation from SHA-bound publication concurrency.
 
 - **Fixed**
-  - (placeholder)
+  - Re-established exact-main package releases by preserving GitHub App
+    checkout authentication, executing the embedded release identity script,
+    consuming the full tar listing under `pipefail`, and publishing the sealed
+    tarball through an explicit local path.
 
 - **Security**
   - Clarified that CLA acceptance records remain in access-controlled storage

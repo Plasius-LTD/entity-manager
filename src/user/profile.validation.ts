@@ -1,6 +1,7 @@
 import {
   createSchema,
   field,
+  validateDisplayName,
   validateEmail,
   validateName,
   type Infer,
@@ -75,7 +76,7 @@ type ProfileTextFieldRule = {
   field: EditableUserProfileFieldName;
   maxLength: number;
   required: boolean;
-  format: "name" | "email";
+  format: "name" | "displayName" | "email";
 };
 
 function toIssue(
@@ -274,6 +275,14 @@ function validateProfileTextField(
     );
   }
 
+  if (rule.format === "displayName" && !validateDisplayName(normalizedValue)) {
+    return toIssue(
+      rule.field,
+      `${rule.field}.invalid_format`,
+      editableUserProfileValidationTranslationKeys.nameUnsupportedCharacters,
+    );
+  }
+
   if (rule.format === "email" && !validateEmail(normalizedValue)) {
     return toIssue(
       rule.field,
@@ -336,7 +345,7 @@ export const editableProfileNameShape = {
         field: "name.displayName",
         maxLength: 80,
         required: true,
-        format: "name",
+        format: "displayName",
       })
     ),
 
