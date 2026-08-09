@@ -55,9 +55,10 @@ if (!result.valid) {
 `UserName.status` is optional for backwards compatibility. An omitted status is
 treated as complete. Identity/profile services can set
 `UserNameStatus.INCOMPLETE` when schema-safe provider placeholders are awaiting
-user review. Display names use the dedicated shared display-name validator and
-may contain Unicode decimal digits; first, middle, and last names retain the
-stricter personal-name validator.
+user review. This is optional in both runtime validation and the exported
+TypeScript interface. Display names use the dedicated shared display-name
+validator and may contain Unicode decimal digits; first, middle, and last names
+retain the stricter personal-name validator.
 
 ### Editable Profile Validation Translations
 
