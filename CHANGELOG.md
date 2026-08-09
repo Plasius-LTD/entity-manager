@@ -16,6 +16,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.0.27] - 2026-08-09
+
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
   - Kept the published `UserName.status` TypeScript property genuinely
     optional, matching the runtime schema and the documented compatibility for
     existing object literals that omit status (`#52`).
@@ -426,3 +440,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.24]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.24
 [1.0.25]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.25
 [1.0.26]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.26
+[1.0.27]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.27
