@@ -10,6 +10,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.0.26] - 2026-08-09
+
+- **Added**
   - Added optional `UserName.status` metadata with explicit complete and
     incomplete values while preserving legacy profiles that omit it for task
     #52.
@@ -409,3 +423,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.23]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.23
 [1.0.24]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.24
 [1.0.25]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.25
+[1.0.26]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.26
