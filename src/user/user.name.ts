@@ -18,6 +18,15 @@ export enum UserNameStatus {
   INCOMPLETE = "incomplete",
 }
 
+export interface UserName {
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  displayName: string;
+  status?: UserNameStatus;
+  preferredDisplayOrder: PreferredDisplayOrder;
+}
+
 export const userNameShape = {
   firstName: field
     .string()
@@ -99,5 +108,3 @@ export const userNameSchema = createSchema(userNameShape, "userName", {
   table: "",
   schemaValidator: validateUserNameSchema,
 });
-
-export type UserName = Infer<typeof userNameSchema>;

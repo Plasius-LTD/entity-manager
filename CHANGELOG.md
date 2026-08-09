@@ -16,7 +16,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Fixed**
-  - (placeholder)
+  - Kept the published `UserName.status` TypeScript property genuinely
+    optional, matching the runtime schema and the documented compatibility for
+    existing object literals that omit status (`#52`).
 
 - **Security**
   - (placeholder)

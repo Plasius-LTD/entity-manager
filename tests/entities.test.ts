@@ -13,6 +13,7 @@ import {
   Scope,
   EntityTypes,
   UserNameStatus,
+  type UserName,
   editableUserProfileFieldTranslationKeys,
   editableUserProfileValidationTranslationKeys,
   entityManagerEnGbTranslations,
@@ -111,16 +112,17 @@ describe("baseEntitySchema", () => {
 });
 
 describe("userEntitySchema", () => {
+  const legacyNameWithoutStatus = {
+    firstName: "Alice",
+    lastName: "Lovelace",
+    displayName: "Alice L",
+    preferredDisplayOrder: PreferredDisplayOrder.DISPLAY_NAME,
+  } satisfies UserName;
   const baseUser = {
     type: "userEntity",
     version: "1.0.0",
     email: "alice@example.com",
-    name: {
-      firstName: "Alice",
-      lastName: "Lovelace",
-      displayName: "Alice L",
-      preferredDisplayOrder: PreferredDisplayOrder.DISPLAY_NAME,
-    },
+    name: legacyNameWithoutStatus,
   };
 
   it("validates a minimal user entity", () => {
