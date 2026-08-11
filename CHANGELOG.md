@@ -28,6 +28,8 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Security**
+  - Updated the development-tool dependency graph to patched
+    `brace-expansion` and `nanoid` releases after the feedback release audit.
   - (placeholder)
   - Reject nested unknown/accessor/sparse control data, duplicate identifiers,
     corrupt timelines, TTL extension, and packet/content joins; redact the
