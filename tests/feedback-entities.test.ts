@@ -806,6 +806,77 @@ describe("isolated feedback control entities", () => {
     ).toBe(true);
   });
 
+  it("accepts only an exact replay of persisted review eligibility state", () => {
+    const initial = {
+      type: "feedbackReviewEligibilityEntity",
+      version: "1.0.0",
+      keyedSubject,
+      acceptedReviewCount: 1,
+      denyExpiresAt: "2026-08-17T10:05:00.000Z",
+      updatedAt,
+      expiresAt: "2026-08-17T10:05:00.000Z",
+      hardDeleteAt: "2026-08-18T10:05:00.000Z",
+      ttlSeconds: 30 * 24 * 60 * 60,
+      revision: 0,
+    };
+    const nextUpdatedAt = initial.denyExpiresAt;
+    const nextHardDeleteAt = "2026-09-17T10:05:00.000Z";
+    const persisted = {
+      ...initial,
+      acceptedReviewCount: 2,
+      denyExpiresAt: "2026-09-16T10:05:00.000Z",
+      updatedAt: nextUpdatedAt,
+      expiresAt: "2026-09-16T10:05:00.000Z",
+      hardDeleteAt: nextHardDeleteAt,
+      ttlSeconds: feedbackControlTtlSeconds(
+        nextUpdatedAt,
+        nextHardDeleteAt,
+      ),
+      revision: 1,
+    };
+
+    expect(feedbackReviewEligibilityEntitySchema.validate(initial).valid).toBe(
+      true,
+    );
+    expect(
+      feedbackReviewEligibilityEntitySchema.validate(persisted, initial).valid,
+    ).toBe(true);
+    expect(
+      feedbackReviewEligibilityEntitySchema.validate(
+        structuredClone(persisted),
+        persisted,
+      ).valid,
+    ).toBe(true);
+
+    expect(
+      feedbackReviewEligibilityEntitySchema.validate(persisted).valid,
+    ).toBe(false);
+    expect(
+      feedbackReviewEligibilityEntitySchema.validate(
+        { ...persisted, acceptedReviewCount: 3 },
+        persisted,
+      ).valid,
+    ).toBe(false);
+    expect(
+      feedbackReviewEligibilityEntitySchema.validate(
+        structuredClone(persisted),
+        { ...persisted, accountId: "synthetic-account" },
+      ).valid,
+    ).toBe(false);
+
+    const accessorReplay = structuredClone(persisted);
+    Object.defineProperty(accessorReplay, "acceptedReviewCount", {
+      enumerable: true,
+      get: () => 2,
+    });
+    expect(
+      feedbackReviewEligibilityEntitySchema.validate(
+        accessorReplay,
+        persisted,
+      ).valid,
+    ).toBe(false);
+  });
+
   it("requires TTL to resolve exactly at the hard-delete deadline", () => {
     const result = feedbackReviewEligibilityEntitySchema.validate({
       type: "feedbackReviewEligibilityEntity",

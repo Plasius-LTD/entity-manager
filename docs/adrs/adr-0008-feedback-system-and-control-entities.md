@@ -136,6 +136,9 @@ cooldown, or released-to-committed reconciliation.
 
 New mutable state starts at revision zero. Updates validated against an
 existing entity must advance by exactly one, except an exact idempotent replay.
+This equality-only replay rule also applies to the separate review-eligibility
+entity at non-zero revisions; it does not permit a new non-zero row or bypass
+the accepted-review counter, deny-expiry, lifecycle, or closed-field checks.
 Storage adapters must combine this contract with ETag or transactional
 conditional writes; schema revision validation alone does not provide
 distributed atomicity.
