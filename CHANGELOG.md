@@ -11,6 +11,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Added**
   - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.1.0] - 2026-08-13
+
+- **Added**
+  - (placeholder)
   - Added actor-free packet, report, checkpoint, and safe-reconstruction
     metadata plus isolated abuse, review-eligibility, and reservation control
     entities for privacy-safe feedback.
@@ -483,3 +497,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.25]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.25
 [1.0.26]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.26
 [1.0.27]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.27
+[1.1.0]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.1.0
