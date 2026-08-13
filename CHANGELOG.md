@@ -11,15 +11,57 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Added**
   - (placeholder)
+  - Added actor-free packet, report, checkpoint, and safe-reconstruction
+    metadata plus isolated abuse, review-eligibility, and reservation control
+    entities for privacy-safe feedback.
+  - Added the authoritative single-row progressive-cooldown aggregate that
+    persists the wire-exact `@plasius/api` state with canonical IDs, bounded
+    reservations, six-day reconciliation windows, CAS revisions, and safe
+    released-to-committed reconciliation.
+  - Added actor-free 24-hour structured-draft metadata with ETag/CAS revisions
+    and an immutable identifier-isolated commit-reconciliation outbox with
+    bounded live TTL and hard-delete deadlines.
 
 - **Changed**
   - (placeholder)
+  - Deprecated the non-atomic abuse and per-reservation feedback projections
+    for new writes; review eligibility remains a separate control entity.
+  - Aligned the progressive aggregate with exact `@plasius/api` 1.1.1
+    owner-bound write admission (`attemptGeneration`, attempt-token digest,
+    and `writing`) and source cooldown/draft constants from
+    `@plasius/schema` 1.4.0.
 
 - **Fixed**
   - (placeholder)
 
 - **Security**
+  - Updated the development-tool dependency graph to patched
+    `brace-expansion` and `nanoid` releases after the feedback release audit.
   - (placeholder)
+  - Reject nested unknown/accessor/sparse control data, duplicate identifiers,
+    corrupt timelines, TTL extension, and packet/content joins; redact the
+    complete pseudonymous aggregate from serialization and logs.
+  - Reserve a 24-hour hard-purge safety window, require persistence-time TTL
+    shortening and explicit deletion verification, and prevent expired
+    reservations from being transitioned or resurrected.
+  - Separate per-record `reconciliationUntilMs` from aggregate
+    `hardDeleteByMs`, reject zero TTL while any control state remains, preserve
+    later records when one reconciliation window expires, and reject exact
+    replays against stored rows containing unknown identity/join fields.
+  - Feedback entity validation rejects unknown fields, raw account subjects,
+    narrative/network metadata, actor audit IDs, cross-boundary packet
+    correlation, stale revisions, and retention deadlines more than seven
+    days after logical expiry.
+  - Report/checkpoint keys use purpose-specific canonical UTC grammars; keyed
+    subjects and reservation IDs reject non-canonical base64url aliases; and
+    terminal reservations reject every mutation while permitting exact
+    idempotent replay.
+  - Accepted-bug transitions reject active-cooldown and non-monotonic updates;
+    reservations start at one attempt and cannot extend their original
+    logical expiry or hard-delete deadline.
+  - Reject forged or duplicate immutable-write authority, release after write
+    admission, draft narrative/reporter/final-packet fields, and outbox
+    content/authority joins; raw attempt tokens are never entity fields.
 
 ## [1.0.27] - 2026-08-09
 

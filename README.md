@@ -93,6 +93,150 @@ console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
 - Required fields include `partitionKey`, `id`, `entityType`, `createdAt`, `createdBy`, and `isDeleted` (plus system `type` and `version`).
 - Persistence-only fields such as `partitionKey`, `createdBy`, `updatedBy`, `deletedBy`, and `deletedReason` are marked internal and are omitted by default when calling `schema.serialize(...)`.
 
+### Privacy-safe feedback entities
+
+- Actor-free content metadata:
+  `systemManagedFeedbackPacketEntitySchema`,
+  `systemManagedFeedbackDraftEntitySchema`,
+  `systemManagedFeedbackReportEntitySchema`,
+  `systemManagedFeedbackCheckpointEntitySchema`, and
+  `systemManagedFeedbackReconstructionEntitySchema`
+- Isolated reporter controls:
+  `feedbackProgressiveCooldownAggregateEntitySchema`,
+  `feedbackCommitReconciliationOutboxEntitySchema`, and
+  `feedbackReviewEligibilityEntitySchema`; plus
+  the deprecated compatibility projections
+  `feedbackAbuseControlEntitySchema` and
+  `feedbackSubmissionReservationEntitySchema`
+- Closed constants:
+  `FeedbackArtifactKind`, `FeedbackProcessor`,
+  `FeedbackSubmissionKind`, `FeedbackReservationState`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_LADDER_MS`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS`,
+  `FEEDBACK_PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS`, and
+  `FEEDBACK_REVIEW_DENY_SECONDS`; and the exact
+  `FEEDBACK_DRAFT_TTL_SECONDS` draft lifetime
+
+Feedback content metadata deliberately does not extend `BaseEntity`: system
+artifacts have no `createdBy`, `updatedBy`, or `deletedBy` identity. Reporter
+controls accept only a purpose/version-scoped HMAC token in the form
+`fbs1.<43 canonical unpadded base64url characters>`. Reservation IDs use a
+canonical 22-character encoding of 128 random bits. Validators reject non-zero
+unused pad bits, so one binary token cannot have multiple textual aliases. Raw
+account subjects, narrative, pixels, network metadata, and arbitrary extra
+fields are rejected.
+
+All reporter-control fields are internal, so default serialization exposes no
+pseudonym, reservation, counter, or expiry. The aggregate state ID and its
+complete state are also redacted by log sanitization. Reservation and
+reconciliation state have no packet, artifact, or draft ID and therefore
+cannot create a durable join from the pseudonymous control plane to
+identifier-free content.
+
+Structured drafts have a separate actor-free metadata entity in
+`feedbackDrafts`. It fixes every dirty-save lifetime to 24 hours, requires an
+ETag/CAS revision increment, and rejects narrative, ciphertext, reporter keys,
+final packet IDs, and arbitrary fields. An adapter must validate the draft
+packet itself with the `@plasius/schema` draft contract and compose payload plus
+entity metadata in one conditional storage operation; this entity does not
+redeclare or weaken that payload contract. Draft expiry is a hard-delete
+deadline, not permission to extend retention through soft delete or backups.
+
+The progressive bug controller is persisted as one authoritative row per
+canonical `fbs1.*` state ID. Its nested `state` is wire-equivalent to
+`@plasius/api` 1.1.1 `ProgressiveCooldownState`, including owner-bound
+`attemptGeneration`/`attemptTokenDigest` authority and the `writing` state;
+the envelope adds only the row ID, numeric CAS revision, server write epoch,
+and deletion TTL. Validate updates with the current row:
+
+```ts
+const validation =
+  feedbackProgressiveCooldownAggregateEntitySchema.validate(next, current);
+```
+
+The next revision must be exactly `current.revision + 1`. Persistence must also
+use an ETag or transactional condition; schema validation is not a substitute
+for an atomic storage write.
+
+The aggregate enforces unique canonical reservation IDs, idempotency digests,
+and attempt-token digests, at most 64 retained records, one active lease, the
+exact five-minute lease, the `5m → 15m → 1h → 6h → 24h` ladder, a 48-hour quiet
+reset, and seven days as the absolute post-expiry privacy deadline. New
+reservations carry generation-one one-use write authority. Only the matching
+reserved record can enter `writing`, and an admitted write cannot be released;
+it converges through immutable-acceptance commit/reconciliation. The first six
+days are the live reconciliation interval; the final 24 hours are available
+only for verified purge and expiry of bounded backups. A released reservation
+may become committed during its reconciliation interval after immutable
+acceptance is independently verified; this restarts the cooldown without
+creating a packet/content join. Exact cloned replays are accepted without
+advancing the CAS revision, but neither the submitted nor stored row may
+contain unknown fields.
+
+`feedbackCommitReconciliationOutboxEntitySchema` is an immutable control-plane
+outbox row created in the same control transaction as `reserved → writing`.
+It contains only the keyed state ID, random reservation ID, closed submission
+kind, timing bounds, TTL, and revision. It intentionally excludes packet,
+artifact, draft, idempotency, raw/digested attempt authority, narrative, and
+account fields. Reconciliation deletes the row after a deterministic outcome;
+live TTL ends at the six-day reconciliation cutoff and the absolute purge
+deadline is exactly one day later.
+
+`state.hardDeleteByMs` is the absolute upper-bound deletion deadline and is
+recomputed as the latest record or active cooldown/reset reconciliation horizon
+plus exactly 24 hours. Each record's `reconciliationUntilMs` is its six-day
+availability cutoff. `ttlSeconds` is the maximum whole-second TTL budget ending
+at the latest reconciliation horizon, one full day before the hard-delete
+deadline. A zero budget is valid only on an empty, inactive delete instruction;
+an active or partially retained aggregate must have a positive budget.
+
+The value is calculated at `writtenAtMs`; it must not be copied directly into
+Cosmos `ttl`, whose clock starts at the database `_ts`. At persistence time an
+adapter must shorten the database TTL using trusted current time, issue a
+delete instead when no positive duration remains, and never persist Cosmos TTL
+zero (where zero is invalid). A purge worker must explicitly delete and verify
+the row during the safety window. Soft-delete, versions, and backups must be
+configured to be absent by `hardDeleteByMs`; a database TTL alone is
+insufficient. This compensates for Cosmos TTL being relative to the last
+database modification and for physical deletion being an asynchronous,
+capacity-dependent background task
+([Azure TTL behaviour](https://learn.microsoft.com/en-us/azure/cosmos-db/time-to-live)).
+The isolated feedback-control boundary therefore requires a restore horizon of
+no more than 24 hours and must not be copied into longer-lived continuous or
+long-term backups.
+
+The earlier per-subject abuse and per-reservation schemas remain exported only
+for source-compatible migration. They cannot atomically enforce aggregate
+capacity or released-to-committed reconciliation and must not be used for new
+writes. Review eligibility remains a separate 30-day overlay and is never
+folded into the bug aggregate.
+
+This release requires the registry-published `@plasius/schema` 1.4.0 or later
+for schema-owned feedback constants and closed draft contracts. Source, Git,
+workspace, and file dependency pins are not supported.
+
+Other pseudonymous control entities use the same 24-hour purge safety window;
+identifier-free artifacts and checkpoints retain an exact whole-second
+lifecycle budget. A control hard-delete deadline must be between one and seven
+days after logical expiry so the safety budget never removes an effective
+cooldown or eligibility overlay. Writers must update the timestamp, TTL budget,
+and revision atomically. See
+[ADR-0008](./docs/adrs/adr-0008-feedback-system-and-control-entities.md) and the
+[feedback entity boundary design](./docs/design/feedback-entity-boundaries.md).
+
+The review contract validates an exact 30-day deny. The deprecated abuse and
+per-reservation projections retain their previous validation behaviour only
+for migration compatibility.
+
+Report/checkpoint windows use closed purpose-specific UTC keys:
+`hour:YYYY-MM-DDTHH`, `day:YYYY-MM-DD`, or a five-minute
+`reconcile:YYYY-MM-DDTHH:mm` bucket. Checkpoint IDs are exactly
+`checkpoint:<processor>:<windowKey>`. Account-shaped strings, pseudonyms,
+UUIDs, invalid calendar values, and processor/window mismatches are rejected.
+
 ### User and permissions
 - `userEntitySchema`, `userNameSchema`, `userAvatarSchema`
 - Editable profile validation helpers and translation keys:
