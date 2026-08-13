@@ -17,6 +17,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Fixed**
   - (placeholder)
+  - Accept exact idempotent replays of persisted review-eligibility rows at
+    non-zero revisions without weakening zero-revision creation, CAS, expiry,
+    lifecycle, or closed-field validation (`#59`).
 
 - **Security**
   - (placeholder)

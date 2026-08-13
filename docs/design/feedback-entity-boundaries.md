@@ -144,8 +144,11 @@ digested attempt authority, narrative, or account field. A worker deletes it
 after a deterministic outcome; its TTL reaches the six-day reconciliation
 cutoff and hard deletion is due exactly one day later.
 
-The review entity remains a distinct 30-day deny overlay. It cannot be joined
-to the bug aggregate. The earlier `feedbackAbuseControlEntitySchema` and
+The review entity remains a distinct 30-day deny overlay. It accepts only a
+field-for-field exact replay at the persisted revision; creation remains
+revision zero and a material transition still requires the next revision plus
+expiry of the previous deny. It cannot be joined to the bug aggregate. The
+earlier `feedbackAbuseControlEntitySchema` and
 `feedbackSubmissionReservationEntitySchema` are deprecated compatibility
 projections: they may support migration reads but are not authoritative for
 new writes and retain their original three-state enum.

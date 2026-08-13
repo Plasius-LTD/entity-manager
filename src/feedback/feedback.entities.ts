@@ -2323,6 +2323,8 @@ export const feedbackReviewEligibilityEntitySchema = closeFeedbackSchema(
   ),
   "increment",
   validateReviewEligibilityTransition,
+  undefined,
+  () => true,
 );
 export type FeedbackReviewEligibilityEntity = Infer<
   typeof feedbackReviewEligibilityEntityShape

@@ -212,7 +212,10 @@ The earlier per-subject abuse and per-reservation schemas remain exported only
 for source-compatible migration. They cannot atomically enforce aggregate
 capacity or released-to-committed reconciliation and must not be used for new
 writes. Review eligibility remains a separate 30-day overlay and is never
-folded into the bug aggregate.
+folded into the bug aggregate. Its validator accepts an exact clone of the
+persisted row at the current non-zero revision for idempotent reads/retries;
+new rows must still start at revision zero, and every material update must
+advance by exactly one after the previous deny expires.
 
 This release requires the registry-published `@plasius/schema` 1.4.0 or later
 for schema-owned feedback constants and closed draft contracts. Source, Git,
