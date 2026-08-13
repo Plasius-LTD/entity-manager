@@ -22,6 +22,8 @@ const reservationId = `fbr1.${"A".repeat(22)}`;
 const secondReservationId = `fbr1.${"B".repeat(21)}Q`;
 const idempotencyDigest = "E".repeat(43);
 const secondIdempotencyDigest = "I".repeat(43);
+const attemptTokenDigest = "M".repeat(43);
+const secondAttemptTokenDigest = "Q".repeat(43);
 
 function canonicalToken(byteLength: 16 | 32, index: number): string {
   const bytes = Buffer.alloc(byteLength);
@@ -65,6 +67,8 @@ function reservedRecord(
     leaseExpiresAtMs,
     reconciliationUntilMs:
       leaseExpiresAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
+    attemptGeneration: 1,
+    attemptTokenDigest,
     ...override,
   };
 }
@@ -111,6 +115,12 @@ function releasedAggregate(
     status: FeedbackReservationState.RELEASED,
     reservedAtMs: source.reservedAtMs,
     leaseExpiresAtMs: source.leaseExpiresAtMs,
+    ...(source.attemptGeneration === undefined
+      ? {}
+      : { attemptGeneration: source.attemptGeneration }),
+    ...(source.attemptTokenDigest === undefined
+      ? {}
+      : { attemptTokenDigest: source.attemptTokenDigest }),
     releasedAtMs,
     reconciliationUntilMs:
       releasedAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
@@ -152,6 +162,15 @@ function committedAggregate(
     status: FeedbackReservationState.COMMITTED,
     reservedAtMs: source.reservedAtMs,
     leaseExpiresAtMs: source.leaseExpiresAtMs,
+    ...(source.attemptGeneration === undefined
+      ? {}
+      : { attemptGeneration: source.attemptGeneration }),
+    ...(source.attemptTokenDigest === undefined
+      ? {}
+      : { attemptTokenDigest: source.attemptTokenDigest }),
+    ...(source.writeStartedAtMs === undefined
+      ? {}
+      : { writeStartedAtMs: source.writeStartedAtMs }),
     committedAtMs,
     committedStreak,
     cooldownDurationMs,
@@ -193,6 +212,7 @@ function addedReservationAggregate(
   const nextRecord = reservedRecord({
     reservationId: `fbr1.${canonicalToken(16, index)}`,
     idempotencyDigest: canonicalToken(32, index),
+    attemptTokenDigest: canonicalToken(32, 10_000 + index),
     reservedAtMs,
     leaseExpiresAtMs:
       reservedAtMs + FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS,
@@ -318,6 +338,7 @@ describe("feedback progressive-cooldown aggregate", () => {
       ...reservedRecord({
         reservationId: secondReservationId,
         idempotencyDigest: secondIdempotencyDigest,
+        attemptTokenDigest: secondAttemptTokenDigest,
         reservedAtMs: BASE_MS + 1,
         leaseExpiresAtMs:
           BASE_MS +
@@ -365,6 +386,15 @@ describe("feedback progressive-cooldown aggregate", () => {
         status: FeedbackReservationState.COMMITTED,
         reservedAtMs: source.reservedAtMs,
         leaseExpiresAtMs: source.leaseExpiresAtMs,
+        ...(source.attemptGeneration === undefined
+          ? {}
+          : { attemptGeneration: source.attemptGeneration }),
+        ...(source.attemptTokenDigest === undefined
+          ? {}
+          : { attemptTokenDigest: source.attemptTokenDigest }),
+        ...(source.writeStartedAtMs === undefined
+          ? {}
+          : { writeStartedAtMs: source.writeStartedAtMs }),
         committedAtMs,
         committedStreak,
         cooldownDurationMs,
@@ -641,6 +671,7 @@ describe("feedback progressive-cooldown aggregate", () => {
         ...reservedRecord({
           reservationId: secondReservationId,
           idempotencyDigest: secondIdempotencyDigest,
+          attemptTokenDigest: secondAttemptTokenDigest,
           reservedAtMs: BASE_MS + 1,
           leaseExpiresAtMs:
             BASE_MS +
@@ -975,6 +1006,7 @@ describe("feedback progressive-cooldown aggregate", () => {
       ...reservedRecord({
         reservationId: secondReservationId,
         idempotencyDigest: secondIdempotencyDigest,
+        attemptTokenDigest: secondAttemptTokenDigest,
         reservedAtMs: BASE_MS + 1,
         leaseExpiresAtMs:
           BASE_MS +
@@ -1112,6 +1144,7 @@ describe("feedback progressive-cooldown aggregate", () => {
     const resetRecord = reservedRecord({
       reservationId: secondReservationId,
       idempotencyDigest: secondIdempotencyDigest,
+      attemptTokenDigest: secondAttemptTokenDigest,
       reservedAtMs: resetAt,
       leaseExpiresAtMs:
         resetAt + FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS,

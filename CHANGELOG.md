@@ -18,11 +18,18 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     persists the wire-exact `@plasius/api` state with canonical IDs, bounded
     reservations, six-day reconciliation windows, CAS revisions, and safe
     released-to-committed reconciliation.
+  - Added actor-free 24-hour structured-draft metadata with ETag/CAS revisions
+    and an immutable identifier-isolated commit-reconciliation outbox with
+    bounded live TTL and hard-delete deadlines.
 
 - **Changed**
   - (placeholder)
   - Deprecated the non-atomic abuse and per-reservation feedback projections
     for new writes; review eligibility remains a separate control entity.
+  - Aligned the progressive aggregate with exact `@plasius/api` 1.1.1
+    owner-bound write admission (`attemptGeneration`, attempt-token digest,
+    and `writing`) and source cooldown/draft constants from
+    `@plasius/schema` 1.4.0.
 
 - **Fixed**
   - (placeholder)
@@ -52,6 +59,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Accepted-bug transitions reject active-cooldown and non-monotonic updates;
     reservations start at one attempt and cannot extend their original
     logical expiry or hard-delete deadline.
+  - Reject forged or duplicate immutable-write authority, release after write
+    admission, draft narrative/reporter/final-packet fields, and outbox
+    content/authority joins; raw attempt tokens are never entity fields.
 
 ## [1.0.27] - 2026-08-09
 

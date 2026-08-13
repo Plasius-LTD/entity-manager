@@ -4,9 +4,9 @@
 
 This package supplies persistence metadata for privacy-safe feedback artifacts
 and the isolated state needed to control review eligibility, progressive bug
-cooldowns, and submission reservations. The structured packet, report,
-checkpoint payload, and reconstruction-manifest contracts remain owned by
-`@plasius/schema`.
+cooldowns, submission reservations, and commit reconciliation. The structured
+draft, packet, report, checkpoint payload, and reconstruction-manifest
+contracts remain owned by `@plasius/schema`.
 
 The entity boundary deliberately has two non-joinable halves:
 
@@ -18,16 +18,27 @@ Neither half contains narrative, client pixels, network metadata, raw account
 subjects, or an actor audit identity.
 
 The schema store names keep these records physically routable to separate
-boundaries: packets/reconstructions use `feedbackContent`, reports/checkpoints
-use `feedbackReports`, and every reporter control uses `feedbackControl`.
-Deployments must map those names to separately authorised stores rather than
-co-locating them behind one broad data role.
+boundaries: structured drafts use `feedbackDrafts`, packets/reconstructions use
+`feedbackContent`, reports/checkpoints use `feedbackReports`, and every
+reporter control uses `feedbackControl`. Deployments must map those names to
+separately authorised stores rather than co-locating them behind one broad
+data role.
 
 ## Content-plane entities
 
-The packet, report, checkpoint, and safe-reconstruction entities are
+The draft, packet, report, checkpoint, and safe-reconstruction entities are
 system-managed. They do not extend `BaseEntity`, because `BaseEntity` requires
 `createdBy` and can retain other actor audit fields.
+
+Draft metadata identifies one opaque draft, its closed bug/review branch, the
+schema contract version, its latest server save, exact expiry/deletion epoch,
+TTL, and CAS revision. The separately validated `@plasius/schema` draft packet
+is composed with this metadata by the storage adapter in one conditional
+operation; it is not redeclared as an entity field. Each dirty save advances
+the revision by exactly one and refreshes an exact 24-hour lifetime. Narrative,
+ciphertext, pixels, reporter keys, final packet IDs, and unknown properties are
+rejected. Draft storage must not enable a soft-delete or backup window beyond
+the declared expiry.
 
 The immutable packet, report, and reconstruction entities use revision zero.
 An existing entity may be supplied to `schema.validate(next, existing)` for an
@@ -69,12 +80,14 @@ address, or arbitrary opaque string does not satisfy the contract.
 Reservation IDs have the exact wire form
 `fbr1.<22 canonical unpadded base64url characters>`, representing 128 random
 bits with the same canonical pad-bit rule. Each reservation also has a
-purpose-isolated canonical 256-bit idempotency digest. IDs and digests must be
-unique among at most 64 retained records in one aggregate. The aggregate
-intentionally has no packet or artifact identifier. A
-reconciliation worker may prove that an immutable packet exists through its
-own bounded outbox protocol, but it must not persist that join in the control
-entity.
+purpose-isolated canonical 256-bit idempotency digest. New API 1.1.1
+reservations additionally store generation-one owner authority as a canonical
+256-bit attempt-token digest; the raw one-use token never persists. IDs,
+idempotency digests, and attempt-token digests must be unique among at most 64
+retained records in one aggregate. The aggregate intentionally has no packet,
+artifact, or draft identifier. A reconciliation worker may prove that an
+immutable packet exists through its own bounded outbox protocol, but it must
+not persist that join in the control entity.
 
 The adapter-private envelope is:
 
@@ -82,7 +95,7 @@ The adapter-private envelope is:
 - numeric CAS `revision`;
 - server-owned `writtenAtMs`;
 - floor-rounded `ttlSeconds`; and
-- a `state` object wire-equivalent to `@plasius/api`
+- a `state` object wire-equivalent to `@plasius/api` 1.1.1
   `ProgressiveCooldownState`.
 
 The state is one authoritative subject-wide CAS unit: streak, current commit
@@ -94,12 +107,15 @@ The aggregate enforces the complete ladder
 `5m → 15m → 1h → 6h → 24h`, caps the streak at the final step, and resets its
 counter and streak only after 48 quiet hours. New reservations use an exact
 five-minute lease and may start only after any active lease and cooldown end.
-Reserved records remain available for reconciliation for exactly six days
-after lease expiry. Released records remain available for six days after
-release. Committed records remain available until exactly 48 hours plus six
-days after commit. A separate final 24-hour safety window permits verified
-deletion and bounded backup expiry without exceeding the seven-day
-post-logical-expiry privacy deadline.
+The matching generation/token digest may move a record from `reserved` to
+`writing` at a server epoch inside that lease. Writing continues to hold the
+active lease and cannot transition to `released`; it must converge through
+verified commit/reconciliation. Reserved and writing records remain available
+for reconciliation for exactly six days after lease expiry. Released records
+remain available for six days after release. Committed records remain
+available until exactly 48 hours plus six days after commit. A separate final
+24-hour safety window permits verified deletion and bounded backup expiry
+without exceeding the seven-day post-logical-expiry privacy deadline.
 
 Commit and release normally transition a reserved record. Reconciliation may
 promote a released record to committed after an independent verifier proves
@@ -119,11 +135,20 @@ next CAS. A newly written row never carries a reservation whose
 before another, the CAS removes only the expired record and preserves a
 positive TTL through the later record's reconciliation horizon.
 
+The immutable `feedbackCommitReconciliationOutboxEntitySchema` row is created
+in the same `feedbackControl` partition transaction as `reserved → writing`.
+It retains only `stateId`, `reservationId`, the closed submission branch, the
+write/lease/reconciliation epochs, one-day purge deadline, TTL, and revision.
+It has no content-plane ID, draft/packet/artifact ID, idempotency value, raw or
+digested attempt authority, narrative, or account field. A worker deletes it
+after a deterministic outcome; its TTL reaches the six-day reconciliation
+cutoff and hard deletion is due exactly one day later.
+
 The review entity remains a distinct 30-day deny overlay. It cannot be joined
 to the bug aggregate. The earlier `feedbackAbuseControlEntitySchema` and
 `feedbackSubmissionReservationEntitySchema` are deprecated compatibility
 projections: they may support migration reads but are not authoritative for
-new writes.
+new writes and retain their original three-state enum.
 
 All control fields are marked internal and public serialization emits only the
 schema `type` and `version`. The state ID and complete aggregate state are
@@ -195,12 +220,15 @@ The schemas reject:
 - reservation retention extension, invalid initial attempt counts, terminal
   reservation mutation, or creation directly in a terminal state;
 - duplicate aggregate reservation IDs/idempotency digests, more than 64
-  retained records, multiple active leases, sparse arrays, nested accessors,
-  corrupt commit sequences, premature pruning, or a next reservation before
-  cooldown expiry;
+  retained records, duplicate attempt-authority digests, forged writing
+  authority, release after write admission, multiple active leases, sparse
+  arrays, nested accessors, corrupt commit sequences, premature pruning, or a
+  next reservation before cooldown expiry;
 - aggregate CAS skips/stale updates, non-exact purge calculations, TTL
   round-up, and changes to committed records other than exact replay;
 - changes to immutable artifact fields;
+- draft revision skips, lifetime drift, or reporter/content join fields;
+- reconciliation outbox lifetime drift or content/authority join fields;
 - resurrection of committed or released reservations;
 - mismatched TTL/deadline arithmetic; and
 - hard-delete deadlines more than seven days after logical expiry.
@@ -222,3 +250,7 @@ the site/backend capability evaluator remains the source of truth.
 Rollback disables intake and processing through those remote flags. Existing
 control state remains subject to its original hard-delete deadline and must not
 be rewritten to lengthen retention.
+
+The package depends on the registry-published `@plasius/schema` `^1.4.0`.
+Source, Git, workspace, and file dependency pins are prohibited; clean npm
+registry installation is a release gate.

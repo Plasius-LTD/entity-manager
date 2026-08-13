@@ -1,4 +1,6 @@
 import {
+  FEEDBACK_BUG_COOLDOWN_SECONDS as SCHEMA_FEEDBACK_BUG_COOLDOWN_SECONDS,
+  FEEDBACK_REVIEW_COOLDOWN_SECONDS,
   createSchema,
   field,
   validateSemVer,
@@ -11,8 +13,9 @@ import { isCanonicalUtcTimestamp } from "../family/validation.js";
 const MAX_HARD_DELETE_LAG_SECONDS = 7 * 24 * 60 * 60;
 const CONTROL_PURGE_SAFETY_SECONDS = 24 * 60 * 60;
 const MAX_TTL_SECONDS = 3 * 366 * 24 * 60 * 60;
-const REVIEW_DENY_SECONDS = 30 * 24 * 60 * 60;
+const REVIEW_DENY_SECONDS = FEEDBACK_REVIEW_COOLDOWN_SECONDS;
 const BUG_QUIET_RESET_SECONDS = 48 * 60 * 60;
+const DRAFT_TTL_SECONDS = 24 * 60 * 60;
 const MILLISECONDS_PER_SECOND = 1_000;
 const PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS = 5 * 60 * 1_000;
 const PROGRESSIVE_COOLDOWN_RECONCILIATION_MS = 6 * 24 * 60 * 60 * 1_000;
@@ -20,7 +23,7 @@ const PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS = 24 * 60 * 60 * 1_000;
 const PROGRESSIVE_COOLDOWN_RESET_MS = 48 * 60 * 60 * 1_000;
 const PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS = 64;
 const UUID_V4_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const KEYED_SUBJECT_PATTERN =
   /^fbs1\.[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u;
 const RESERVATION_ID_PATTERN = /^fbr1\.[A-Za-z0-9_-]{21}[AQgw]$/u;
@@ -40,16 +43,13 @@ export const FEEDBACK_CONTROL_PURGE_SAFETY_SECONDS =
   CONTROL_PURGE_SAFETY_SECONDS;
 /** Exact accepted-review deny duration. */
 export const FEEDBACK_REVIEW_DENY_SECONDS = REVIEW_DENY_SECONDS;
+/** Exact lifetime of a structured, narrative-free feedback draft. */
+export const FEEDBACK_DRAFT_TTL_SECONDS = DRAFT_TTL_SECONDS;
 /** Exact quiet period after which the progressive bug ladder resets. */
 export const FEEDBACK_BUG_QUIET_RESET_SECONDS = BUG_QUIET_RESET_SECONDS;
 /** Progressive accepted-bug cooldown ladder, capped at 24 hours. */
-export const FEEDBACK_BUG_COOLDOWN_SECONDS = [
-  5 * 60,
-  15 * 60,
-  60 * 60,
-  6 * 60 * 60,
-  24 * 60 * 60,
-] as const;
+export const FEEDBACK_BUG_COOLDOWN_SECONDS =
+  SCHEMA_FEEDBACK_BUG_COOLDOWN_SECONDS;
 
 /**
  * Exact default progressive-cooldown policy shared with `@plasius/api`.
@@ -58,11 +58,9 @@ export const FEEDBACK_BUG_COOLDOWN_SECONDS = [
  * caller-selected cooldown or reconciliation values.
  */
 export const FEEDBACK_PROGRESSIVE_COOLDOWN_LADDER_MS = Object.freeze([
-  5 * 60 * 1_000,
-  15 * 60 * 1_000,
-  60 * 60 * 1_000,
-  6 * 60 * 60 * 1_000,
-  24 * 60 * 60 * 1_000,
+  ...SCHEMA_FEEDBACK_BUG_COOLDOWN_SECONDS.map(
+    (cooldownSeconds) => cooldownSeconds * MILLISECONDS_PER_SECOND,
+  ),
 ] as const);
 /** Exact five-minute reservation lease. */
 export const FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS =
@@ -113,14 +111,21 @@ export const FeedbackSubmissionKind = {
 export type FeedbackSubmissionKind =
   (typeof FeedbackSubmissionKind)[keyof typeof FeedbackSubmissionKind];
 
-/** Reservation lifecycle; committed and released records are terminal. */
+/** Reservation lifecycle mirrored from the current `@plasius/api` wire state. */
 export const FeedbackReservationState = {
   RESERVED: "reserved",
+  WRITING: "writing",
   COMMITTED: "committed",
   RELEASED: "released",
 } as const;
 export type FeedbackReservationState =
   (typeof FeedbackReservationState)[keyof typeof FeedbackReservationState];
+
+const DEPRECATED_FEEDBACK_RESERVATION_STATES = [
+  FeedbackReservationState.RESERVED,
+  FeedbackReservationState.COMMITTED,
+  FeedbackReservationState.RELEASED,
+] as const;
 
 type RevisionMode = "immutable" | "increment";
 
@@ -170,9 +175,10 @@ function invalidResult(message: string) {
 }
 
 /**
- * The schema package version consumed here predates closed-object validation.
- * Wrap validation so unexpected values are rejected rather than silently
- * dropped, which is essential at the content/control privacy boundary.
+ * Preserve a second closed-object and data-descriptor boundary around the
+ * schema-owned validator. `@plasius/schema` rejects unknown fields, while this
+ * wrapper additionally rejects accessors, non-plain objects, invalid CAS
+ * revisions, and unsafe state transitions before persistence.
  */
 function closeFeedbackSchema<S extends SchemaShape>(
   schema: Schema<S>,
@@ -318,6 +324,38 @@ function artifactIdField(description: string, immutable = true) {
     .validator((value) => UUID_V4_PATTERN.test(value));
 
   return immutable ? builder.immutable() : builder;
+}
+
+function draftIdField() {
+  return field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description(
+      "Opaque identifier for one short-lived structured feedback draft.",
+    )
+    .validator((value) => UUID_V4_PATTERN.test(value))
+    .PID({
+      classification: "low",
+      action: "none",
+      logHandling: "omit",
+      purpose: "short-lived feedback draft lookup",
+    });
+}
+
+function draftRevisionField() {
+  return field
+    .number()
+    .internal()
+    .required()
+    .version("1.0")
+    .description("ETag-protected structured draft revision.")
+    .validator(
+      (value) =>
+        Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000,
+    );
 }
 
 function revisionField(immutable = false) {
@@ -637,6 +675,93 @@ export type SystemManagedFeedbackPacketEntity = Infer<
   typeof systemManagedFeedbackPacketEntityShape
 >;
 
+function validateDraftLifecycle(entity: Record<string, unknown>): boolean {
+  return (
+    exactSecondsBetween(entity.updatedAt, entity.expiresAt) ===
+      DRAFT_TTL_SECONDS &&
+    entity.expiresAt === entity.hardDeleteAt &&
+    entity.ttlSeconds === DRAFT_TTL_SECONDS
+  );
+}
+
+function validateDraftTransition(
+  next: Record<string, unknown>,
+  existing: Record<string, unknown>,
+): boolean {
+  return (
+    validateDraftLifecycle(existing) &&
+    next.draftId === existing.draftId &&
+    next.submissionKind === existing.submissionKind &&
+    next.contractVersion === existing.contractVersion &&
+    isCanonicalUtcTimestamp(next.updatedAt) &&
+    isCanonicalUtcTimestamp(existing.updatedAt) &&
+    Date.parse(next.updatedAt) > Date.parse(existing.updatedAt)
+  );
+}
+
+export const systemManagedFeedbackDraftEntityShape = {
+  draftId: draftIdField(),
+  submissionKind: field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description("Closed feedback branch owned by this draft.")
+    .enum(Object.values(FeedbackSubmissionKind)),
+  contractVersion: field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description("Version of the schema-owned structured draft packet.")
+    .validator(validateSemVer),
+  updatedAt: canonicalTimestampField(
+    "Server-owned instant of the latest conditional draft save.",
+  ),
+  expiresAt: canonicalTimestampField(
+    "Exact 24-hour expiry of the structured draft.",
+  ),
+  hardDeleteAt: canonicalTimestampField(
+    "Exact draft deletion deadline; no soft-delete extension is allowed.",
+  ),
+  ttlSeconds: ttlField(),
+  revision: draftRevisionField(),
+};
+
+/**
+ * Actor-free persistence metadata for a schema-validated structured draft.
+ *
+ * Adapters compose this metadata with the separately schema-validated draft
+ * packet inside one conditional storage operation. The packet remains outside
+ * this entity shape so this package cannot weaken its closed structured-field
+ * contract. Narrative, ciphertext, pixels, reporter keys, and final packet
+ * identifiers are never valid entity fields.
+ */
+export const systemManagedFeedbackDraftEntitySchema = closeFeedbackSchema(
+  createSchema(
+    systemManagedFeedbackDraftEntityShape,
+    "systemManagedFeedbackDraftEntity",
+    {
+      version: "1.0.0",
+      piiEnforcement: "strict",
+      table: "feedbackDrafts",
+      unknownFields: "reject",
+      identity: "exact",
+      schemaValidator: (entity) =>
+        validateDraftLifecycle(entity as Record<string, unknown>),
+    },
+  ),
+  "increment",
+  validateDraftTransition,
+  undefined,
+  () => true,
+);
+export type SystemManagedFeedbackDraftEntity = Infer<
+  typeof systemManagedFeedbackDraftEntityShape
+>;
+
 export const systemManagedFeedbackReportEntityShape = {
   artifactKind: field
     .string()
@@ -788,6 +913,9 @@ export interface FeedbackProgressiveCooldownReservationRecord {
   readonly reservedAtMs: number;
   readonly leaseExpiresAtMs: number;
   readonly reconciliationUntilMs: number;
+  readonly attemptGeneration?: number;
+  readonly attemptTokenDigest?: string;
+  readonly writeStartedAtMs?: number;
   readonly committedAtMs?: number;
   readonly committedStreak?: number;
   readonly cooldownDurationMs?: number;
@@ -1018,17 +1146,37 @@ const progressiveReservationCommonKeys = new Set([
   "leaseExpiresAtMs",
   "reconciliationUntilMs",
 ]);
-const progressiveReservedKeys = progressiveReservationCommonKeys;
-const progressiveReleasedKeys = new Set([
+const progressiveReservationAuthorityKeys = new Set([
+  "attemptGeneration",
+  "attemptTokenDigest",
+]);
+const progressiveReservedKeys = new Set([
+  ...progressiveReservationCommonKeys,
+  ...progressiveReservationAuthorityKeys,
+]);
+const progressiveWritingKeys = new Set([
+  ...progressiveReservedKeys,
+  "writeStartedAtMs",
+]);
+const progressiveReleasedRequiredKeys = new Set([
   ...progressiveReservationCommonKeys,
   "releasedAtMs",
 ]);
-const progressiveCommittedKeys = new Set([
+const progressiveReleasedKeys = new Set([
+  ...progressiveReleasedRequiredKeys,
+  ...progressiveReservationAuthorityKeys,
+]);
+const progressiveCommittedRequiredKeys = new Set([
   ...progressiveReservationCommonKeys,
   "committedAtMs",
   "committedStreak",
   "cooldownDurationMs",
   "cooldownUntilMs",
+]);
+const progressiveCommittedKeys = new Set([
+  ...progressiveCommittedRequiredKeys,
+  ...progressiveReservationAuthorityKeys,
+  "writeStartedAtMs",
 ]);
 const progressiveReservationKeys = new Set([
   ...progressiveCommittedKeys,
@@ -1063,17 +1211,38 @@ function validateProgressiveReservation(
     return false;
   }
   const status = input.status;
-  const exactKeys =
+  const requiredKeys =
+    status === FeedbackReservationState.RESERVED
+      ? progressiveReservationCommonKeys
+      : status === FeedbackReservationState.WRITING
+        ? progressiveWritingKeys
+      : status === FeedbackReservationState.RELEASED
+        ? progressiveReleasedRequiredKeys
+        : status === FeedbackReservationState.COMMITTED
+          ? progressiveCommittedRequiredKeys
+          : undefined;
+  const allowedKeys =
     status === FeedbackReservationState.RESERVED
       ? progressiveReservedKeys
-      : status === FeedbackReservationState.RELEASED
-        ? progressiveReleasedKeys
-        : status === FeedbackReservationState.COMMITTED
-          ? progressiveCommittedKeys
-          : undefined;
+      : status === FeedbackReservationState.WRITING
+        ? progressiveWritingKeys
+        : status === FeedbackReservationState.RELEASED
+          ? progressiveReleasedKeys
+          : status === FeedbackReservationState.COMMITTED
+            ? progressiveCommittedKeys
+            : undefined;
+  const hasAttemptGeneration = Object.prototype.hasOwnProperty.call(
+    input,
+    "attemptGeneration",
+  );
+  const hasAttemptTokenDigest = Object.prototype.hasOwnProperty.call(
+    input,
+    "attemptTokenDigest",
+  );
   if (
-    exactKeys === undefined ||
-    !hasExactEnumerableDataKeys(input, exactKeys) ||
+    requiredKeys === undefined ||
+    allowedKeys === undefined ||
+    !hasExactEnumerableDataKeys(input, requiredKeys, allowedKeys) ||
     typeof input.reservationId !== "string" ||
     !RESERVATION_ID_PATTERN.test(input.reservationId) ||
     typeof input.idempotencyDigest !== "string" ||
@@ -1087,7 +1256,14 @@ function validateProgressiveReservation(
         PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS,
       ) ||
     !isNonnegativeSafeInteger(input.reconciliationUntilMs) ||
-    input.reconciliationUntilMs <= writtenAtMs
+    input.reconciliationUntilMs <= writtenAtMs ||
+    hasAttemptGeneration !== hasAttemptTokenDigest ||
+    (hasAttemptGeneration &&
+      (!Number.isSafeInteger(input.attemptGeneration) ||
+        Number(input.attemptGeneration) < 1 ||
+        Number(input.attemptGeneration) > Number.MAX_SAFE_INTEGER ||
+        typeof input.attemptTokenDigest !== "string" ||
+        !IDEMPOTENCY_DIGEST_PATTERN.test(input.attemptTokenDigest)))
   ) {
     return false;
   }
@@ -1099,6 +1275,21 @@ function validateProgressiveReservation(
         input.leaseExpiresAtMs,
         PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
       )
+    );
+  }
+
+  if (status === FeedbackReservationState.WRITING) {
+    return (
+      hasAttemptGeneration &&
+      isNonnegativeSafeInteger(input.writeStartedAtMs) &&
+      input.writeStartedAtMs >= input.reservedAtMs &&
+      input.writeStartedAtMs < input.leaseExpiresAtMs &&
+      input.writeStartedAtMs <= writtenAtMs &&
+      input.reconciliationUntilMs ===
+        safeAddMilliseconds(
+          input.leaseExpiresAtMs,
+          PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
+        )
     );
   }
 
@@ -1117,6 +1308,10 @@ function validateProgressiveReservation(
 
   const committedAtMs = input.committedAtMs;
   const committedStreak = input.committedStreak;
+  const hasWriteStartedAtMs = Object.prototype.hasOwnProperty.call(
+    input,
+    "writeStartedAtMs",
+  );
   if (
     !isNonnegativeSafeInteger(committedAtMs) ||
     committedAtMs < input.reservedAtMs ||
@@ -1124,7 +1319,13 @@ function validateProgressiveReservation(
     !isNonnegativeSafeInteger(committedStreak) ||
     committedStreak < 1 ||
     committedStreak >
-      FEEDBACK_PROGRESSIVE_COOLDOWN_LADDER_MS.length
+      FEEDBACK_PROGRESSIVE_COOLDOWN_LADDER_MS.length ||
+    (hasWriteStartedAtMs &&
+      (!hasAttemptGeneration ||
+        !isNonnegativeSafeInteger(input.writeStartedAtMs) ||
+        input.writeStartedAtMs < input.reservedAtMs ||
+        input.writeStartedAtMs >= input.leaseExpiresAtMs ||
+        input.writeStartedAtMs > committedAtMs))
   ) {
     return false;
   }
@@ -1306,20 +1507,27 @@ function validateProgressiveAggregateLifecycle(
   const reservations: FeedbackProgressiveCooldownReservationRecord[] = [];
   const reservationIds = new Set<string>();
   const idempotencyDigests = new Set<string>();
+  const attemptTokenDigests = new Set<string>();
   let activeReservationCount = 0;
   for (const candidate of stateRecord.reservations) {
     if (
       !validateProgressiveReservation(candidate, writtenAtMs) ||
       reservationIds.has(candidate.reservationId) ||
-      idempotencyDigests.has(candidate.idempotencyDigest)
+      idempotencyDigests.has(candidate.idempotencyDigest) ||
+      (candidate.attemptTokenDigest !== undefined &&
+        attemptTokenDigests.has(candidate.attemptTokenDigest))
     ) {
       return false;
     }
     reservationIds.add(candidate.reservationId);
     idempotencyDigests.add(candidate.idempotencyDigest);
+    if (candidate.attemptTokenDigest !== undefined) {
+      attemptTokenDigests.add(candidate.attemptTokenDigest);
+    }
     reservations.push(candidate);
     if (
-      candidate.status === FeedbackReservationState.RESERVED &&
+      (candidate.status === FeedbackReservationState.RESERVED ||
+        candidate.status === FeedbackReservationState.WRITING) &&
       candidate.leaseExpiresAtMs > writtenAtMs
     ) {
       activeReservationCount += 1;
@@ -1415,7 +1623,7 @@ function validateProgressiveAggregateLifecycle(
   );
 }
 
-type ProgressiveTransitionKind = "commit" | "release";
+type ProgressiveTransitionKind = "commit" | "release" | "writing";
 
 function validateProgressiveReservationTransition(
   next: FeedbackProgressiveCooldownReservationRecord,
@@ -1427,24 +1635,40 @@ function validateProgressiveReservationTransition(
     next.reservationId !== existing.reservationId ||
     next.idempotencyDigest !== existing.idempotencyDigest ||
     next.reservedAtMs !== existing.reservedAtMs ||
-    next.leaseExpiresAtMs !== existing.leaseExpiresAtMs
+    next.leaseExpiresAtMs !== existing.leaseExpiresAtMs ||
+    next.attemptGeneration !== existing.attemptGeneration ||
+    next.attemptTokenDigest !== existing.attemptTokenDigest
   ) {
     return undefined;
   }
 
   if (
     existing.status === FeedbackReservationState.RESERVED &&
+    next.status === FeedbackReservationState.WRITING &&
+    next.writeStartedAtMs === writtenAtMs &&
+    existing.writeStartedAtMs === undefined
+  ) {
+    return "writing";
+  }
+
+  if (
+    existing.status === FeedbackReservationState.RESERVED &&
     next.status === FeedbackReservationState.RELEASED &&
-    next.releasedAtMs === writtenAtMs
+    next.releasedAtMs === writtenAtMs &&
+    next.writeStartedAtMs === undefined &&
+    existing.attemptGeneration !== undefined &&
+    existing.attemptTokenDigest !== undefined
   ) {
     return "release";
   }
 
   if (
     (existing.status === FeedbackReservationState.RESERVED ||
+      existing.status === FeedbackReservationState.WRITING ||
       existing.status === FeedbackReservationState.RELEASED) &&
     next.status === FeedbackReservationState.COMMITTED &&
-    next.committedAtMs === writtenAtMs
+    next.committedAtMs === writtenAtMs &&
+    next.writeStartedAtMs === existing.writeStartedAtMs
   ) {
     return "commit";
   }
@@ -1538,13 +1762,16 @@ function validateProgressiveAggregateTransition(
     const addition = additions[0];
     const hasActiveLease = existing.state.reservations.some(
       (reservation) =>
-        reservation.status === FeedbackReservationState.RESERVED &&
+        (reservation.status === FeedbackReservationState.RESERVED ||
+          reservation.status === FeedbackReservationState.WRITING) &&
         reservation.leaseExpiresAtMs > next.writtenAtMs,
     );
     if (
       addition === undefined ||
       addition.status !== FeedbackReservationState.RESERVED ||
       addition.reservedAtMs !== next.writtenAtMs ||
+      addition.attemptGeneration !== 1 ||
+      addition.attemptTokenDigest === undefined ||
       hasActiveLease ||
       (baseCooldownUntilMs !== undefined &&
         baseCooldownUntilMs > next.writtenAtMs)
@@ -1627,6 +1854,36 @@ export const feedbackProgressiveCooldownReservationRecordShape = {
   ),
   reconciliationUntilMs: internalMillisecondField(
     "Exact status-specific six-day reconciliation-availability deadline.",
+  ),
+  attemptGeneration: field
+    .number()
+    .internal()
+    .optional()
+    .version("1.0")
+    .description("Owner-bound immutable-write authority generation.")
+    .validator(
+      (value) =>
+        Number.isSafeInteger(value) &&
+        value >= 1 &&
+        value <= Number.MAX_SAFE_INTEGER,
+    ),
+  attemptTokenDigest: field
+    .string()
+    .internal()
+    .optional()
+    .version("1.0")
+    .description(
+      "Domain-separated digest of one-use write authority; never the raw token.",
+    )
+    .validator((value) => IDEMPOTENCY_DIGEST_PATTERN.test(value))
+    .PID({
+      classification: "low",
+      action: "none",
+      logHandling: "redact",
+      purpose: "feedback immutable-write authority convergence",
+    }),
+  writeStartedAtMs: optionalInternalMillisecondField(
+    "Owner-bound immutable-write admission epoch.",
   ),
   committedAtMs: optionalInternalMillisecondField(
     "Immutable-acceptance commit epoch in milliseconds.",
@@ -1783,6 +2040,147 @@ export const feedbackProgressiveCooldownAggregateEntitySchema =
     progressiveAggregateReplayValueEqual,
     validateProgressiveAggregateLifecycle,
   );
+
+function validateCommitReconciliationOutboxLifecycle(
+  input: Record<string, unknown>,
+): boolean {
+  if (
+    !isNonnegativeSafeInteger(input.reservedAtMs) ||
+    !isNonnegativeSafeInteger(input.writeStartedAtMs) ||
+    !isNonnegativeSafeInteger(input.leaseExpiresAtMs) ||
+    !isNonnegativeSafeInteger(input.reconciliationUntilMs) ||
+    !isNonnegativeSafeInteger(input.hardDeleteByMs) ||
+    !isNonnegativeSafeInteger(input.ttlSeconds) ||
+    input.leaseExpiresAtMs !==
+      safeAddMilliseconds(
+        input.reservedAtMs,
+        PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS,
+      ) ||
+    input.writeStartedAtMs < input.reservedAtMs ||
+    input.writeStartedAtMs >= input.leaseExpiresAtMs
+  ) {
+    return false;
+  }
+
+  const reconciliationUntilMs = safeAddMilliseconds(
+    input.leaseExpiresAtMs,
+    PROGRESSIVE_COOLDOWN_RECONCILIATION_MS,
+  );
+  const hardDeleteByMs =
+    reconciliationUntilMs === undefined
+      ? undefined
+      : safeAddMilliseconds(
+          reconciliationUntilMs,
+          PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS,
+        );
+  const ttlSeconds =
+    reconciliationUntilMs === undefined
+      ? undefined
+      : Math.floor(
+          (reconciliationUntilMs - input.writeStartedAtMs) /
+            MILLISECONDS_PER_SECOND,
+        );
+
+  return (
+    reconciliationUntilMs !== undefined &&
+    hardDeleteByMs !== undefined &&
+    ttlSeconds !== undefined &&
+    ttlSeconds > 0 &&
+    input.reconciliationUntilMs === reconciliationUntilMs &&
+    input.hardDeleteByMs === hardDeleteByMs &&
+    input.ttlSeconds === ttlSeconds
+  );
+}
+
+export const feedbackCommitReconciliationOutboxEntityShape = {
+  stateId: field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description(
+      "Purpose-isolated canonical state key for the control transaction.",
+    )
+    .validator((value) => KEYED_SUBJECT_PATTERN.test(value))
+    .PID({
+      classification: "low",
+      action: "none",
+      logHandling: "redact",
+      purpose: "feedback commit reconciliation routing",
+    }),
+  reservationId: field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description("Canonical random reservation ID awaiting reconciliation.")
+    .validator((value) => RESERVATION_ID_PATTERN.test(value))
+    .PID({
+      classification: "low",
+      action: "none",
+      logHandling: "redact",
+      purpose: "feedback commit reconciliation routing",
+    }),
+  submissionKind: field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description("Closed verifier branch for the immutable acceptance.")
+    .enum(Object.values(FeedbackSubmissionKind)),
+  reservedAtMs: internalMillisecondField(
+    "Reservation creation epoch anchoring the exact five-minute lease.",
+  ).immutable(),
+  writeStartedAtMs: internalMillisecondField(
+    "Owner-bound immutable-write admission epoch.",
+  ).immutable(),
+  leaseExpiresAtMs: internalMillisecondField(
+    "Reservation lease deadline and earliest scheduled reconciliation epoch.",
+  ).immutable(),
+  reconciliationUntilMs: internalMillisecondField(
+    "Final live reconciliation deadline, exactly six days after lease expiry.",
+  ).immutable(),
+  hardDeleteByMs: internalMillisecondField(
+    "Absolute deletion deadline after the fixed one-day purge safety window.",
+  ).immutable(),
+  ttlSeconds: ttlField(true),
+  revision: revisionField(true),
+};
+
+/**
+ * Immutable, identifier-isolated reconciliation queue record.
+ *
+ * The row is created transactionally with `reserved -> writing` in the same
+ * `feedbackControl` partition and deleted after a verified commit or terminal
+ * reconciliation outcome. It contains only control-plane routing IDs. Packet,
+ * artifact, draft, idempotency, attempt-token, narrative, and reporter-source
+ * values are deliberately outside the closed shape.
+ */
+export const feedbackCommitReconciliationOutboxEntitySchema =
+  closeFeedbackSchema(
+    createSchema(
+      feedbackCommitReconciliationOutboxEntityShape,
+      "feedbackCommitReconciliationOutboxEntity",
+      {
+        version: "1.0.0",
+        piiEnforcement: "strict",
+        table: "feedbackControl",
+        unknownFields: "reject",
+        identity: "exact",
+        schemaValidator: (entity) =>
+          validateCommitReconciliationOutboxLifecycle(
+            entity as Record<string, unknown>,
+          ),
+      },
+    ),
+    "immutable",
+  );
+export type FeedbackCommitReconciliationOutboxEntity = Infer<
+  typeof feedbackCommitReconciliationOutboxEntityShape
+>;
 
 /**
  * @deprecated Use `feedbackProgressiveCooldownAggregateEntitySchema`.
@@ -1958,7 +2356,7 @@ export const feedbackSubmissionReservationEntityShape = {
     .required()
     .version("1.0")
     .description("Reservation convergence state.")
-    .enum(Object.values(FeedbackReservationState)),
+    .enum(DEPRECATED_FEEDBACK_RESERVATION_STATES),
   attemptCount: countField("Bounded reservation attempt counter.", 1),
 };
 
@@ -1971,8 +2369,8 @@ function validateReservationTransition(
 
   if (previousState === FeedbackReservationState.RESERVED) {
     if (
-      !Object.values(FeedbackReservationState).includes(
-        nextState as FeedbackReservationState,
+      !DEPRECATED_FEEDBACK_RESERVATION_STATES.includes(
+        nextState as (typeof DEPRECATED_FEEDBACK_RESERVATION_STATES)[number],
       ) ||
       !Number.isSafeInteger(next.attemptCount) ||
       !Number.isSafeInteger(existing.attemptCount) ||
