@@ -17,6 +17,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Fixed**
   - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.1.1] - 2026-08-13
+
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
   - Accept exact idempotent replays of persisted review-eligibility rows at
     non-zero revisions without weakening zero-revision creation, CAS, expiry,
     lifecycle, or closed-field validation (`#59`).
@@ -501,3 +515,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.26]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.26
 [1.0.27]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.27
 [1.1.0]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.1.0
+[1.1.1]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.1.1
