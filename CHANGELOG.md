@@ -11,6 +11,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Added**
   - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.1.2] - 2026-08-24
+
+- **Added**
+  - (placeholder)
   - Add a distinct, evidence-bound `provider-asserted` adult assurance contract
     for positive external account age signals without weakening `verified`.
 
@@ -522,3 +536,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.0.27]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.0.27
 [1.1.0]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.1.0
 [1.1.1]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.1.1
+[1.1.2]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.1.2
