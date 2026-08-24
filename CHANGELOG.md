@@ -16,6 +16,8 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Changed**
   - (placeholder)
+  - Run CI and dependency-maintenance workflows with Node-24-native checkout
+    and setup actions so self-hosted main-branch post steps complete reliably.
 
 - **Fixed**
   - (placeholder)
