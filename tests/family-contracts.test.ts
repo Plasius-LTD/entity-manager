@@ -87,6 +87,36 @@ describe("ageAssuranceEvidenceSchema", () => {
     expect(result.valid).toBe(false);
   });
 
+  it("keeps a provider account age signal distinct from verified assurance", () => {
+    const providerAssertion: AgeAssuranceEvidence = {
+      level: AgeAssuranceLevel.PROVIDER_ASSERTED,
+      method: AgeAssuranceMethod.PROVIDER_AGE_SIGNAL,
+      assertedAt: createdAt,
+      expiresAt: "2025-08-15T09:00:00.000Z",
+      evidenceRef: "evidence-provider-age-signal-001",
+    };
+
+    expect(validateAgeAssuranceEvidence(providerAssertion)).toBe(true);
+    expect(
+      validateAgeAssuranceEvidence({
+        ...providerAssertion,
+        evidenceRef: undefined,
+      }),
+    ).toBe(false);
+    expect(
+      validatePublicAgeAssuranceEvidence({
+        ...providerAssertion,
+        evidenceRef: undefined,
+      }),
+    ).toBe(true);
+    expect(
+      validateAgeAssuranceEvidence({
+        ...providerAssertion,
+        level: AgeAssuranceLevel.VERIFIED,
+      }),
+    ).toBe(false);
+  });
+
   it("rejects an evidence expiry that is not after assurance", () => {
     const result = ageAssuranceEvidenceSchema.validate({
       type: "ageAssuranceEvidence",
@@ -416,6 +446,79 @@ describe("actorSubjectPrincipalSchema", () => {
     });
 
     expect(result.valid).toBe(true);
+  });
+
+  it("accepts a provider-asserted adult self principal", () => {
+    const result = actorSubjectPrincipalSchema.validate({
+      type: "actorSubjectPrincipal",
+      version: "1.0.0",
+      actor: {
+        accountId: guardianAccountId,
+        accountType: PrincipalAccountType.USER,
+      },
+      subject: {
+        accountId: guardianAccountId,
+        accountType: PrincipalAccountType.USER,
+      },
+      principalType: PrincipalType.SELF,
+      ageBand: AgeBand.ADULT,
+      assurance: {
+        level: AgeAssuranceLevel.PROVIDER_ASSERTED,
+        method: AgeAssuranceMethod.PROVIDER_AGE_SIGNAL,
+        assertedAt: createdAt,
+        expiresAt: "2099-08-15T09:00:00.000Z",
+      },
+      authenticatedAt: createdAt,
+    });
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects provider-asserted assurance for a non-adult or delegated subject", () => {
+    const assurance = {
+      level: AgeAssuranceLevel.PROVIDER_ASSERTED,
+      method: AgeAssuranceMethod.PROVIDER_AGE_SIGNAL,
+      assertedAt: createdAt,
+      expiresAt: "2099-08-15T09:00:00.000Z",
+    };
+    expect(
+      actorSubjectPrincipalSchema.validate({
+        type: "actorSubjectPrincipal",
+        version: "1.0.0",
+        actor: {
+          accountId: guardianAccountId,
+          accountType: PrincipalAccountType.USER,
+        },
+        subject: {
+          accountId: guardianAccountId,
+          accountType: PrincipalAccountType.USER,
+        },
+        principalType: PrincipalType.SELF,
+        ageBand: AgeBand.SIXTEEN_TO_SEVENTEEN,
+        assurance,
+        authenticatedAt: createdAt,
+      }).valid,
+    ).toBe(false);
+    expect(
+      actorSubjectPrincipalSchema.validate({
+        type: "actorSubjectPrincipal",
+        version: "1.0.0",
+        actor: {
+          accountId: guardianAccountId,
+          accountType: PrincipalAccountType.USER,
+        },
+        subject: {
+          accountId: childAccountId,
+          accountType: PrincipalAccountType.MANAGED_CHILD,
+        },
+        principalType: PrincipalType.GUARDIAN_DELEGATED,
+        relationshipId: "relationship-provider-age-001",
+        authorizationVersion: 1,
+        ageBand: AgeBand.SIXTEEN_TO_SEVENTEEN,
+        assurance,
+        authenticatedAt: createdAt,
+      }).valid,
+    ).toBe(false);
   });
 
   it("rejects a self principal that switches subjects", () => {

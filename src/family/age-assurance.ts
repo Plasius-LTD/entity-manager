@@ -22,6 +22,7 @@ export type AgeBand = (typeof AgeBand)[keyof typeof AgeBand];
 export const AgeAssuranceLevel = {
   SELF_ASSERTED: "self-asserted",
   GUARDIAN_ATTESTED: "guardian-attested",
+  PROVIDER_ASSERTED: "provider-asserted",
   VERIFIED: "verified",
 } as const;
 export type AgeAssuranceLevel =
@@ -30,6 +31,7 @@ export type AgeAssuranceLevel =
 export const AgeAssuranceMethod = {
   SELF_ASSERTION: "self-assertion",
   GUARDIAN_ATTESTATION: "guardian-attestation",
+  PROVIDER_AGE_SIGNAL: "provider-age-signal",
   VERIFIED_PROVIDER: "verified-provider",
   MANUAL_REVIEW: "manual-review",
 } as const;
@@ -114,6 +116,12 @@ function validateAgeAssuranceEvidenceWithPolicy(
       return evidence.level === AgeAssuranceLevel.SELF_ASSERTED;
     case AgeAssuranceMethod.GUARDIAN_ATTESTATION:
       return evidence.level === AgeAssuranceLevel.GUARDIAN_ATTESTED;
+    case AgeAssuranceMethod.PROVIDER_AGE_SIGNAL:
+      return (
+        evidence.level === AgeAssuranceLevel.PROVIDER_ASSERTED &&
+        (isOpaqueIdentifier(evidence.evidenceRef) ||
+          (allowRedactedProviderEvidence && evidence.evidenceRef === undefined))
+      );
     case AgeAssuranceMethod.VERIFIED_PROVIDER:
       return (
         evidence.level === AgeAssuranceLevel.VERIFIED &&

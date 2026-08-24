@@ -38,6 +38,11 @@ managed-child subject, together with the relationship ID, non-negative safe
 integer authorization version, age band, and non-self-asserted assurance. The
 authorization version is intended to invalidate stale delegated sessions.
 Self principals either omit both age band and assurance or provide both.
+Provider account age signals use the distinct `provider-asserted` level and
+`provider-age-signal` method. They are accepted only for an `18+` self
+principal and are rejected for managed-child profiles, child-link invitations,
+and delegated child principals. This preserves a lower-assurance bridge for
+ordinary age-shaped content without relabelling it as verified assurance.
 `AuthenticatedUser.principal` is additive and optional for legacy
 compatibility. When present, its subject account must equal
 `AuthenticatedUser.sub`. A delegated session therefore uses the managed child
@@ -107,6 +112,9 @@ they are not rewritten or deleted as rollback behavior.
 - Authorization code can distinguish actor audit identity from subject scope.
 - Public provider-verified principals round-trip through safe serialization
   while strict stored evidence continues to require its protected reference.
+- Positive provider account age signals can shape ordinary adult content while
+  remaining distinguishable from assurance suitable for financial or reward
+  provider access.
 - Literal-union discriminators remain wire-compatible across independently
   versioned TypeScript packages while preserving dot-style constants.
 - Household transitions have an explicit aggregate invariant protecting the
