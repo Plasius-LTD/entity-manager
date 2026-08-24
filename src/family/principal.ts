@@ -159,6 +159,13 @@ function validateActorSubjectPrincipal(
   }
 
   if (principal.principalType === PrincipalType.SELF) {
+    if (
+      principal.assurance?.level === AgeAssuranceLevel.PROVIDER_ASSERTED &&
+      principal.ageBand !== AgeBand.ADULT
+    ) {
+      return false;
+    }
+
     return (
       actor.accountType === PrincipalAccountType.USER &&
       subject.accountType === PrincipalAccountType.USER &&
@@ -179,7 +186,8 @@ function validateActorSubjectPrincipal(
       principal.ageBand !== undefined &&
       principal.ageBand !== AgeBand.ADULT &&
       principal.assurance !== undefined &&
-      principal.assurance.level !== AgeAssuranceLevel.SELF_ASSERTED
+      principal.assurance.level !== AgeAssuranceLevel.SELF_ASSERTED &&
+      principal.assurance.level !== AgeAssuranceLevel.PROVIDER_ASSERTED
     );
   }
 

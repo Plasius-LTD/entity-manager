@@ -122,7 +122,12 @@ export type ManagedChildProfile = Infer<typeof managedChildProfileShape>;
 function validateManagedChildProfile(profile: ManagedChildProfile): boolean {
   if (profile.createdByAccountId === profile.accountId) return false;
   if (!validateAgeAssuranceEvidence(profile.assurance)) return false;
-  if (profile.assurance.level === AgeAssuranceLevel.SELF_ASSERTED) return false;
+  if (
+    profile.assurance.level === AgeAssuranceLevel.SELF_ASSERTED ||
+    profile.assurance.level === AgeAssuranceLevel.PROVIDER_ASSERTED
+  ) {
+    return false;
+  }
   if (
     !isChronologicallyAtOrAfter(
       profile.createdAt,

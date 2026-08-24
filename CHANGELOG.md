@@ -11,6 +11,8 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Added**
   - (placeholder)
+  - Add a distinct, evidence-bound `provider-asserted` adult assurance contract
+    for positive external account age signals without weakening `verified`.
 
 - **Changed**
   - (placeholder)
@@ -20,6 +22,8 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Security**
   - (placeholder)
+  - Restrict provider-asserted assurance to `18+` self principals and reject it
+    for managed children, delegated child sessions, and child-link invitations.
 
 ## [1.1.1] - 2026-08-13
 

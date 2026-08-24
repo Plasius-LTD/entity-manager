@@ -399,6 +399,12 @@ principals use `validatePublicAgeAssuranceEvidence`, which permits only the
 intentional absence of that protected reference so serialized principals can
 be validated again without weakening stored evidence.
 
+An external account provider's positive adult category is represented
+separately as `provider-asserted` / `provider-age-signal`. It is valid only on
+an `18+` self principal, is never accepted as managed-child assurance, and does
+not mean `verified`. Consumers must continue to require `verified` for funding,
+reward providers, or any other high-assurance policy.
+
 ```ts
 import {
   AgeAssuranceLevel,

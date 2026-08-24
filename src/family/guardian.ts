@@ -454,7 +454,9 @@ function validateGuardianInvitation(invitation: GuardianInvitation): boolean {
       invitation.targetAgeBand === AgeBand.ADULT ||
       invitation.targetAssurance === undefined ||
       !validateAgeAssuranceEvidence(invitation.targetAssurance) ||
-      invitation.targetAssurance.level === AgeAssuranceLevel.SELF_ASSERTED
+      (invitation.targetAssurance.level === AgeAssuranceLevel.SELF_ASSERTED ||
+        invitation.targetAssurance.level ===
+          AgeAssuranceLevel.PROVIDER_ASSERTED)
     ) {
       return false;
     }
