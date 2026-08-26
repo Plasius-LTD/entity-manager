@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-18
-- Updated: 2026-08-13
+- Updated: 2026-08-26
 
 ## Context
 
@@ -56,6 +56,8 @@ Reporter controls are separate schemas for:
 
 - one authoritative progressive bug cooldown/reservation aggregate; and
 - one immutable, identifier-isolated commit-reconciliation outbox row; and
+- one immutable, identifier-isolated committed-acceptance delivery outbox row;
+  and
 - accepted review count and review-deny expiry.
 
 A control state ID is exactly a versioned, canonical unpadded base64url
@@ -73,7 +75,7 @@ validation. It returns a fixed error without echoing a field value. Lifecycle
 validation binds TTL to an absolute hard-delete deadline and limits the total
 privacy lifetime after logical expiry to seven days.
 
-The aggregate stores the wire-exact `@plasius/api` 1.1.1
+The aggregate stores the wire-exact `@plasius/api` `reservation-v1`
 `ProgressiveCooldownState` inside an adapter-private row envelope. It validates
 the fixed `5m → 15m → 1h → 6h → 24h` ladder, a five-minute reservation lease,
 48-hour quiet reset, six-day post-expiry reconciliation, at most 64 unique
@@ -88,7 +90,8 @@ server write epoch must be inside the reservation lease, and a writing record
 cannot release. It converges through commit after immutable acceptance or the
 bounded reconciliation path. A released record may later commit when
 reconciliation independently proves immutable acceptance. That late commit
-advances/caps the current streak and restarts its cooldown; no packet
+advances/caps the current streak, while its cooldown remains anchored to the
+server reservation epoch so reconciliation latency cannot extend it; no packet
 identifier is persisted. Committed records are terminal. Exact deep replay is
 valid without a revision increment; a material CAS update advances by exactly
 one. Reservation-array order is non-semantic, and same-millisecond commits are
@@ -105,6 +108,29 @@ an absolute purge deadline, TTL, and revision. It contains no content-plane
 identifier, packet/artifact/draft ID, idempotency value, raw or digested attempt
 authority, narrative, or account data. Its live TTL ends at the six-day
 reconciliation cutoff and its absolute deletion deadline is one day later.
+
+The immutable committed-acceptance delivery outbox is created transactionally
+with the successful control commit, including reconciled commits. It carries
+only the canonical keyed state ID, random reservation ID, closed packet kind,
+separate server-owned acceptance and control-commit epochs, bounded
+delivery/deletion epochs, TTL,
+and revision zero. It contains no packet ID or content locator/hash, accepted
+content/time string, draft, idempotency or attempt-authority data, request
+metadata, narrative, ciphertext, pixels, or account data. Its worker derives
+the packet UUID transiently, validates the immutable packet, writes the
+separate identifier-free evidence idempotently, and only then deletes the row
+conditionally.
+
+The acceptance epoch must equal the immutable packet's validated server
+reservation time and may not follow the commit epoch. The row remains
+deliverable for exactly six days after the associated bug
+cooldown step or exact 30-day review deny expires. The seventh and final day is
+reserved for explicit deletion and backup expiry. This keeps every copy within
+the seven-day post-eligibility privacy bound while allowing crash-safe evidence
+delivery. TTL is shortened from the later control commit, while eligibility and
+absolute deletion remain anchored to acceptance. The schema validates the
+timing arithmetic; the site owns the atomic Cosmos transaction and cross-store
+delivery protocol.
 
 Each record's `reconciliationUntilMs` is its live six-day reconciliation
 cutoff. The row's `hardDeleteByMs` is the latest record or active
@@ -175,6 +201,10 @@ new state creation but does not bypass existing cooldowns or extend retention.
 - Put packet or attempt-authority data in the outbox: rejected because
   reconciliation needs only control routing and independently verified
   immutable acceptance.
+- Retain packet IDs or Blob locators in committed-acceptance delivery state:
+  rejected because the reservation already provides a transient deterministic
+  projection and a persisted locator would join the pseudonymous and content
+  planes.
 - Rely on serialization to drop extra fields: rejected because unsafe input
   would be accepted silently before persistence.
 - Use TTL without an absolute deadline: rejected because updates and backup
