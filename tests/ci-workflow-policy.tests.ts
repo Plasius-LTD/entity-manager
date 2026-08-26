@@ -43,6 +43,21 @@ describe("workflow trust boundaries", () => {
     ).toHaveLength(2);
   });
 
+  it("isolates the dependency cache for each CI job", () => {
+    const buildJob = ciWorkflow.slice(
+      ciWorkflow.indexOf("\n  build-test:"),
+      ciWorkflow.indexOf("\n  # BEGIN PLASIUS PUBLIC ARTIFACT INTEGRITY JOB"),
+    );
+
+    expect(buildJob).toContain(
+      'echo "NPM_CONFIG_CACHE=${RUNNER_TEMP}/npm-cache" >> "$GITHUB_ENV"',
+    );
+    expect(buildJob).toContain("cache: 'npm'");
+    expect(buildJob.indexOf("NPM_CONFIG_CACHE=${RUNNER_TEMP}/npm-cache")).toBeLessThan(
+      buildJob.indexOf("actions/setup-node@v6"),
+    );
+  });
+
   it("keeps production release workflows off pull-request triggers", () => {
     expect(cdWorkflow).toMatch(/on:\s*\n\s+workflow_dispatch:/u);
     expect(releasePrepareWorkflow).toMatch(/on:\s*\n\s+workflow_call:/u);

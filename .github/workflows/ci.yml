@@ -35,6 +35,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Isolate npm cache for this job
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${RUNNER_TEMP:-}" ]; then
+            echo "RUNNER_TEMP is required for an isolated npm cache." >&2
+            exit 1
+          fi
+          echo "NPM_CONFIG_CACHE=${RUNNER_TEMP}/npm-cache" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'

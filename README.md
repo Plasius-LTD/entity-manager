@@ -567,7 +567,9 @@ Licensed under the [Apache-2.0 License](./LICENSE).
 CI keeps the administrative contributor registry outside Git and npm package
 artifacts using exact, case-normalised path checks. Pull requests run on
 GitHub-hosted runners after same-repository admission; protected `main` CI uses
-the workflow-restricted self-hosted group. Release preparation and npm
+the workflow-restricted self-hosted group. Dependency caching is isolated under
+each CI job's runner-temporary directory, so exact-main validation never reads
+or uploads another repository's shared runner cache. Release preparation and npm
 publication use GitHub-hosted runners with Node.js 24.18.0 LTS.
 
 Package releases start by dispatching `cd.yml` from `main` with the `prepare`
