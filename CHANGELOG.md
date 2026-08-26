@@ -17,6 +17,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Fixed**
   - (placeholder)
+  - Isolate the CI npm cache under each job's runner-temporary directory so an
+    exact-main run cannot archive the shared self-hosted runner cache after all
+    release quality gates have passed.
 
 - **Security**
   - (placeholder)
