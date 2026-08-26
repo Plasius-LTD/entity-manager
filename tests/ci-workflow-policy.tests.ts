@@ -49,8 +49,13 @@ describe("workflow trust boundaries", () => {
       ciWorkflow.indexOf("\n  # BEGIN PLASIUS PUBLIC ARTIFACT INTEGRITY JOB"),
     );
 
-    expect(buildJob).toContain("NPM_CONFIG_CACHE: ${{ runner.temp }}/npm-cache");
+    expect(buildJob).toContain(
+      'echo "NPM_CONFIG_CACHE=${RUNNER_TEMP}/npm-cache" >> "$GITHUB_ENV"',
+    );
     expect(buildJob).toContain("cache: 'npm'");
+    expect(buildJob.indexOf("NPM_CONFIG_CACHE=${RUNNER_TEMP}/npm-cache")).toBeLessThan(
+      buildJob.indexOf("actions/setup-node@v6"),
+    );
   });
 
   it("keeps production release workflows off pull-request triggers", () => {

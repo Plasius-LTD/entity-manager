@@ -32,10 +32,18 @@ jobs:
     needs: trusted_head
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["self-hosted","Linux","X64"]') }}
-    env:
-      NPM_CONFIG_CACHE: ${{ runner.temp }}/npm-cache
     steps:
       - uses: actions/checkout@v6
+
+      - name: Isolate npm cache for this job
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${RUNNER_TEMP:-}" ]; then
+            echo "RUNNER_TEMP is required for an isolated npm cache." >&2
+            exit 1
+          fi
+          echo "NPM_CONFIG_CACHE=${RUNNER_TEMP}/npm-cache" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v6
         with:
