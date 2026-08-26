@@ -20,6 +20,10 @@ const MILLISECONDS_PER_SECOND = 1_000;
 const PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS = 5 * 60 * 1_000;
 const PROGRESSIVE_COOLDOWN_RECONCILIATION_MS = 6 * 24 * 60 * 60 * 1_000;
 const PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS = 24 * 60 * 60 * 1_000;
+const COMMITTED_ACCEPTANCE_DELIVERY_GRACE_MS =
+  PROGRESSIVE_COOLDOWN_RECONCILIATION_MS;
+const COMMITTED_ACCEPTANCE_DELIVERY_PURGE_SAFETY_MS =
+  PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS;
 const PROGRESSIVE_COOLDOWN_RESET_MS = 48 * 60 * 60 * 1_000;
 const PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS = 64;
 const UUID_V4_PATTERN =
@@ -77,6 +81,18 @@ export const FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS =
 /** Exact 48-hour quiet-reset duration. */
 export const FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS =
   PROGRESSIVE_COOLDOWN_RESET_MS;
+/**
+ * Exact post-eligibility interval during which a committed acceptance remains
+ * available for identifier-free evidence delivery.
+ */
+export const FEEDBACK_COMMITTED_ACCEPTANCE_DELIVERY_GRACE_MS =
+  COMMITTED_ACCEPTANCE_DELIVERY_GRACE_MS;
+/**
+ * Final explicit-deletion and backup-expiry window before the absolute
+ * control-data deadline.
+ */
+export const FEEDBACK_COMMITTED_ACCEPTANCE_DELIVERY_PURGE_SAFETY_MS =
+  COMMITTED_ACCEPTANCE_DELIVERY_PURGE_SAFETY_MS;
 /** Maximum number of retained reservation records in one control row. */
 export const FEEDBACK_PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS =
   PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS;
@@ -2040,6 +2056,149 @@ export const feedbackProgressiveCooldownAggregateEntitySchema =
     progressiveAggregateReplayValueEqual,
     validateProgressiveAggregateLifecycle,
   );
+
+function validateCommittedAcceptanceDeliveryOutboxLifecycle(
+  input: Record<string, unknown>,
+): boolean {
+  if (
+    !isNonnegativeSafeInteger(input.committedAtMs) ||
+    !isNonnegativeSafeInteger(input.deliveryUntilMs) ||
+    !isNonnegativeSafeInteger(input.hardDeleteByMs) ||
+    !isNonnegativeSafeInteger(input.ttlSeconds)
+  ) {
+    return false;
+  }
+
+  const cooldownDurationMs =
+    input.deliveryUntilMs -
+    input.committedAtMs -
+    COMMITTED_ACCEPTANCE_DELIVERY_GRACE_MS;
+  const validCooldown =
+    input.submissionKind === FeedbackSubmissionKind.REVIEW
+      ? cooldownDurationMs === REVIEW_DENY_SECONDS * MILLISECONDS_PER_SECOND
+      : input.submissionKind === FeedbackSubmissionKind.BUG &&
+        FEEDBACK_PROGRESSIVE_COOLDOWN_LADDER_MS.includes(cooldownDurationMs);
+  if (!validCooldown) return false;
+
+  const eligibilityUntilMs = safeAddMilliseconds(
+    input.committedAtMs,
+    cooldownDurationMs,
+  );
+  const deliveryUntilMs =
+    eligibilityUntilMs === undefined
+      ? undefined
+      : safeAddMilliseconds(
+          eligibilityUntilMs,
+          COMMITTED_ACCEPTANCE_DELIVERY_GRACE_MS,
+        );
+  const hardDeleteByMs =
+    deliveryUntilMs === undefined
+      ? undefined
+      : safeAddMilliseconds(
+          deliveryUntilMs,
+          COMMITTED_ACCEPTANCE_DELIVERY_PURGE_SAFETY_MS,
+        );
+  const ttlSeconds =
+    deliveryUntilMs === undefined
+      ? undefined
+      : Math.floor(
+          (deliveryUntilMs - input.committedAtMs) /
+            MILLISECONDS_PER_SECOND,
+        );
+
+  return (
+    deliveryUntilMs !== undefined &&
+    hardDeleteByMs !== undefined &&
+    ttlSeconds !== undefined &&
+    ttlSeconds > 0 &&
+    input.deliveryUntilMs === deliveryUntilMs &&
+    input.hardDeleteByMs === hardDeleteByMs &&
+    input.ttlSeconds === ttlSeconds
+  );
+}
+
+export const feedbackCommittedAcceptanceDeliveryOutboxEntityShape = {
+  stateId: field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description(
+      "Purpose-isolated canonical state key for the atomic commit transaction.",
+    )
+    .validator((value) => KEYED_SUBJECT_PATTERN.test(value))
+    .PID({
+      classification: "low",
+      action: "none",
+      logHandling: "redact",
+      purpose: "feedback acceptance-evidence delivery routing",
+    }),
+  reservationId: field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description(
+      "Canonical random reservation ID for deterministic packet projection.",
+    )
+    .validator((value) => RESERVATION_ID_PATTERN.test(value))
+    .PID({
+      classification: "low",
+      action: "none",
+      logHandling: "redact",
+      purpose: "feedback acceptance-evidence delivery routing",
+    }),
+  submissionKind: field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description("Closed packet projection branch for evidence delivery.")
+    .enum(Object.values(FeedbackSubmissionKind)),
+  committedAtMs: internalMillisecondField(
+    "Server-owned immutable-acceptance epoch anchoring eligibility.",
+  ).immutable(),
+  deliveryUntilMs: internalMillisecondField(
+    "Final live delivery deadline after the bounded post-eligibility grace period.",
+  ).immutable(),
+  hardDeleteByMs: internalMillisecondField(
+    "Absolute deletion deadline after the fixed purge-safety window.",
+  ).immutable(),
+  ttlSeconds: ttlField(true),
+  revision: revisionField(true),
+};
+
+/**
+ * Short-lived, pseudonymous delivery row created atomically with a successful
+ * feedback commit. The record contains no packet ID or content locator; the
+ * trusted worker derives and verifies the immutable packet before emitting
+ * identifier-free evidence, then deletes this row conditionally.
+ */
+export const feedbackCommittedAcceptanceDeliveryOutboxEntitySchema =
+  closeFeedbackSchema(
+    createSchema(
+      feedbackCommittedAcceptanceDeliveryOutboxEntityShape,
+      "feedbackCommittedAcceptanceDeliveryOutboxEntity",
+      {
+        version: "1.0.0",
+        piiEnforcement: "strict",
+        table: "feedbackControl",
+        unknownFields: "reject",
+        identity: "exact",
+        schemaValidator: (entity) =>
+          validateCommittedAcceptanceDeliveryOutboxLifecycle(
+            entity as Record<string, unknown>,
+          ),
+      },
+    ),
+    "immutable",
+  );
+export type FeedbackCommittedAcceptanceDeliveryOutboxEntity = Infer<
+  typeof feedbackCommittedAcceptanceDeliveryOutboxEntityShape
+>;
 
 function validateCommitReconciliationOutboxLifecycle(
   input: Record<string, unknown>,

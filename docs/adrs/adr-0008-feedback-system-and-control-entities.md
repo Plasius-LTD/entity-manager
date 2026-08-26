@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-18
-- Updated: 2026-08-13
+- Updated: 2026-08-26
 
 ## Context
 
@@ -56,6 +56,8 @@ Reporter controls are separate schemas for:
 
 - one authoritative progressive bug cooldown/reservation aggregate; and
 - one immutable, identifier-isolated commit-reconciliation outbox row; and
+- one immutable, identifier-isolated committed-acceptance delivery outbox row;
+  and
 - accepted review count and review-deny expiry.
 
 A control state ID is exactly a versioned, canonical unpadded base64url
@@ -105,6 +107,24 @@ an absolute purge deadline, TTL, and revision. It contains no content-plane
 identifier, packet/artifact/draft ID, idempotency value, raw or digested attempt
 authority, narrative, or account data. Its live TTL ends at the six-day
 reconciliation cutoff and its absolute deletion deadline is one day later.
+
+The immutable committed-acceptance delivery outbox is created transactionally
+with the successful control commit, including reconciled commits. It carries
+only the canonical keyed state ID, random reservation ID, closed packet kind,
+server-owned acceptance/commit epoch, bounded delivery/deletion epochs, TTL,
+and revision zero. It contains no packet ID or content locator/hash, accepted
+content/time string, draft, idempotency or attempt-authority data, request
+metadata, narrative, ciphertext, pixels, or account data. Its worker derives
+the packet UUID transiently, validates the immutable packet, writes the
+separate identifier-free evidence idempotently, and only then deletes the row
+conditionally.
+
+The row remains deliverable for exactly six days after the associated bug
+cooldown step or exact 30-day review deny expires. The seventh and final day is
+reserved for explicit deletion and backup expiry. This keeps every copy within
+the seven-day post-eligibility privacy bound while allowing crash-safe evidence
+delivery. The schema validates the timing arithmetic; the site owns the atomic
+Cosmos transaction and cross-store delivery protocol.
 
 Each record's `reconciliationUntilMs` is its live six-day reconciliation
 cutoff. The row's `hardDeleteByMs` is the latest record or active
@@ -175,6 +195,10 @@ new state creation but does not bypass existing cooldowns or extend retention.
 - Put packet or attempt-authority data in the outbox: rejected because
   reconciliation needs only control routing and independently verified
   immutable acceptance.
+- Retain packet IDs or Blob locators in committed-acceptance delivery state:
+  rejected because the reservation already provides a transient deterministic
+  projection and a persisted locator would join the pseudonymous and content
+  planes.
 - Rely on serialization to drop extra fields: rejected because unsafe input
   would be accepted silently before persistence.
 - Use TTL without an absolute deadline: rejected because updates and backup

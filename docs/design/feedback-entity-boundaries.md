@@ -4,8 +4,9 @@
 
 This package supplies persistence metadata for privacy-safe feedback artifacts
 and the isolated state needed to control review eligibility, progressive bug
-cooldowns, submission reservations, and commit reconciliation. The structured
-draft, packet, report, checkpoint payload, and reconstruction-manifest
+cooldowns, submission reservations, commit reconciliation, and post-commit
+acceptance-evidence delivery. The structured draft, packet,
+committed-evidence, report, checkpoint payload, and reconstruction-manifest
 contracts remain owned by `@plasius/schema`.
 
 The entity boundary deliberately has two non-joinable halves:
@@ -144,6 +145,32 @@ digested attempt authority, narrative, or account field. A worker deletes it
 after a deterministic outcome; its TTL reaches the six-day reconciliation
 cutoff and hard deletion is due exactly one day later.
 
+The immutable
+`feedbackCommittedAcceptanceDeliveryOutboxEntitySchema` row is created in the
+same pseudonymous partition transaction as the successful control commit,
+including commits reached through reconciliation. It contains `stateId`,
+`reservationId`, the closed submission kind, the server-owned commit anchor,
+the delivery and hard-delete bounds, TTL, and revision zero. It has no packet
+ID, content locator/hash, accepted content/time string, draft, idempotency or
+attempt-authority value, narrative, request metadata, or account field.
+
+The delivery worker transiently derives the packet UUID from the reservation,
+independently reads and validates that exact immutable packet, and writes the
+separate identifier-free committed-acceptance evidence. It ETag-deletes the
+control row only after an immutable/idempotent evidence write succeeds. A
+pre-commit packet orphan never receives a delivery row, while a response-loss
+or worker crash leaves enough state for replay without retaining a durable
+content join in the control plane.
+
+For bugs, the interval from `committedAtMs` to eligibility expiry is exactly
+one schema-owned cooldown-ladder duration. For reviews it is exactly the
+schema-owned 30-day deny. `deliveryUntilMs` is that expiry plus six days and
+`hardDeleteByMs` is exactly one further day. `ttlSeconds` is the floor-rounded
+live interval ending at `deliveryUntilMs`; adapters shorten it from trusted
+persistence time. This gives delivery a bounded outage window while requiring
+live data, versions, soft deletes, and backups to disappear no later than seven
+days after cooldown/eligibility expiry.
+
 The review entity remains a distinct 30-day deny overlay. It accepts only a
 field-for-field exact replay at the persisted revision; creation remains
 revision zero and a material transition still requires the next revision plus
@@ -232,6 +259,8 @@ The schemas reject:
 - changes to immutable artifact fields;
 - draft revision skips, lifetime drift, or reporter/content join fields;
 - reconciliation outbox lifetime drift or content/authority join fields;
+- committed-acceptance delivery lifetime drift, non-policy eligibility
+  durations, or packet/content/request/authority join fields;
 - resurrection of committed or released reservations;
 - mismatched TTL/deadline arithmetic; and
 - hard-delete deadlines more than seven days after logical expiry.

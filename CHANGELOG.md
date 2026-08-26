@@ -10,7 +10,8 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Added the isolated committed-acceptance delivery outbox entity used to
+    project durable identifier-free evidence after an atomic feedback commit.
 
 - **Changed**
   - (placeholder)
@@ -19,7 +20,10 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Security**
-  - (placeholder)
+  - Bound acceptance-delivery rows to canonical pseudonymous routing IDs,
+    exact bug/review eligibility periods, six-day delivery and one-day purge
+    windows, while rejecting packet/content joins, request metadata,
+    idempotency/attempt authority, narrative, ciphertext, and pixels.
 
 ## [1.1.2] - 2026-08-24
 

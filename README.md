@@ -103,7 +103,8 @@ console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
   `systemManagedFeedbackReconstructionEntitySchema`
 - Isolated reporter controls:
   `feedbackProgressiveCooldownAggregateEntitySchema`,
-  `feedbackCommitReconciliationOutboxEntitySchema`, and
+  `feedbackCommitReconciliationOutboxEntitySchema`,
+  `feedbackCommittedAcceptanceDeliveryOutboxEntitySchema`, and
   `feedbackReviewEligibilityEntitySchema`; plus
   the deprecated compatibility projections
   `feedbackAbuseControlEntitySchema` and
@@ -117,6 +118,8 @@ console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
   `FEEDBACK_PROGRESSIVE_COOLDOWN_PURGE_SAFETY_MS`,
   `FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS`,
   `FEEDBACK_PROGRESSIVE_COOLDOWN_MAX_RESERVATIONS`, and
+  `FEEDBACK_COMMITTED_ACCEPTANCE_DELIVERY_GRACE_MS`,
+  `FEEDBACK_COMMITTED_ACCEPTANCE_DELIVERY_PURGE_SAFETY_MS`, and
   `FEEDBACK_REVIEW_DENY_SECONDS`; and the exact
   `FEEDBACK_DRAFT_TTL_SECONDS` draft lifetime
 
@@ -184,6 +187,27 @@ artifact, draft, idempotency, raw/digested attempt authority, narrative, and
 account fields. Reconciliation deletes the row after a deterministic outcome;
 live TTL ends at the six-day reconciliation cutoff and the absolute purge
 deadline is exactly one day later.
+
+`feedbackCommittedAcceptanceDeliveryOutboxEntitySchema` is a second,
+purpose-specific immutable control row created atomically with the successful
+control commit. It carries only the canonical keyed state ID, reservation ID,
+closed packet kind, server acceptance/commit epoch, delivery/deletion bounds,
+TTL, and revision zero. It contains no packet ID, accepted content/time string,
+Blob locator/hash, idempotency or attempt-authority value, request metadata,
+narrative, ciphertext, or pixels. The trusted delivery worker derives the
+packet ID transiently, verifies the immutable packet, writes the separate
+identifier-free acceptance evidence, and only then conditionally deletes this
+row.
+
+For a bug row, the eligibility interval is exactly one step from the closed
+`5m → 15m → 1h → 6h → 24h` ladder; for a review it is exactly 30 days. Live
+delivery remains available for six further days and the final day is reserved
+for explicit deletion, absence verification, and bounded backup expiry. Thus
+all copies are gone no later than seven days after the associated cooldown or
+review deny expires. The schema cannot make the cross-store operation atomic;
+the host must create this row in the same Cosmos partition transaction as the
+control commit and must use immutable/idempotent evidence writes before its
+ETag-conditional deletion.
 
 `state.hardDeleteByMs` is the absolute upper-bound deletion deadline and is
 recomputed as the latest record or active cooldown/reset reconciliation horizon
