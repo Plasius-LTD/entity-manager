@@ -9,7 +9,8 @@ import {
 } from "../src/index.js";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
-const COMMITTED_AT_MS = Date.parse("2026-08-26T05:00:00.000Z");
+const ACCEPTED_AT_MS = Date.parse("2026-08-26T05:00:00.000Z");
+const COMMITTED_AT_MS = ACCEPTED_AT_MS + 2 * 60 * 1_000;
 const STATE_ID = `fbs1.${"A".repeat(43)}`;
 const RESERVATION_ID = `fbr1.${"A".repeat(22)}`;
 
@@ -21,7 +22,7 @@ function deliveryOutbox(
       : FEEDBACK_REVIEW_DENY_SECONDS * 1_000,
 ) {
   const deliveryUntilMs =
-    COMMITTED_AT_MS +
+    ACCEPTED_AT_MS +
     cooldownDurationMs +
     FEEDBACK_COMMITTED_ACCEPTANCE_DELIVERY_GRACE_MS;
   return {
@@ -30,6 +31,7 @@ function deliveryOutbox(
     stateId: STATE_ID,
     reservationId: RESERVATION_ID,
     submissionKind,
+    acceptedAtMs: ACCEPTED_AT_MS,
     committedAtMs: COMMITTED_AT_MS,
     deliveryUntilMs,
     hardDeleteByMs:
@@ -82,7 +84,7 @@ describe("committed feedback acceptance delivery outbox", () => {
 
     const review = deliveryOutbox("review");
     expect(review.hardDeleteByMs).toBe(
-      COMMITTED_AT_MS +
+      ACCEPTED_AT_MS +
         FEEDBACK_REVIEW_DENY_SECONDS * 1_000 +
         7 * DAY_MS,
     );
@@ -92,6 +94,7 @@ describe("committed feedback acceptance delivery outbox", () => {
     { field: "deliveryUntilMs", delta: 1 },
     { field: "hardDeleteByMs", delta: 1 },
     { field: "ttlSeconds", delta: 1 },
+    { field: "acceptedAtMs", delta: 1 },
     { field: "committedAtMs", delta: 1 },
   ] as const)("rejects lifecycle drift in $field", ({ field, delta }) => {
     const entity = deliveryOutbox("review");
@@ -113,6 +116,25 @@ describe("committed feedback acceptance delivery outbox", () => {
       feedbackCommittedAcceptanceDeliveryOutboxEntitySchema.validate(
         deliveryOutbox("review", 29 * DAY_MS),
       ).valid,
+    ).toBe(false);
+  });
+
+  it("anchors eligibility to acceptance without extending it for commit latency", () => {
+    const entity = deliveryOutbox("review");
+
+    expect(entity.deliveryUntilMs).toBe(
+      entity.acceptedAtMs +
+        FEEDBACK_REVIEW_DENY_SECONDS * 1_000 +
+        FEEDBACK_COMMITTED_ACCEPTANCE_DELIVERY_GRACE_MS,
+    );
+    expect(entity.ttlSeconds).toBe(
+      Math.floor((entity.deliveryUntilMs - entity.committedAtMs) / 1_000),
+    );
+    expect(
+      feedbackCommittedAcceptanceDeliveryOutboxEntitySchema.validate({
+        ...entity,
+        acceptedAtMs: entity.committedAtMs + 1,
+      }).valid,
     ).toBe(false);
   });
 

@@ -14,10 +14,14 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
     project durable identifier-free evidence after an atomic feedback commit.
 
 - **Changed**
-  - (placeholder)
+  - Anchor committed bug cooldowns and review-delivery eligibility to the
+    server reservation acceptance epoch while retaining a separate later
+    control-commit epoch for bounded TTL shortening.
 
 - **Fixed**
-  - (placeholder)
+  - Prevent delayed immutable writes or reconciliation from extending feedback
+    cooldown, delivery, or absolute privacy-deletion deadlines, while preserving
+    the maximum active cooldown across out-of-order commits.
 
 - **Security**
   - Bound acceptance-delivery rows to canonical pseudonymous routing IDs,

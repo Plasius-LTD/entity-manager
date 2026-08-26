@@ -96,7 +96,7 @@ The adapter-private envelope is:
 - numeric CAS `revision`;
 - server-owned `writtenAtMs`;
 - floor-rounded `ttlSeconds`; and
-- a `state` object wire-equivalent to `@plasius/api` 1.1.1
+- a `state` object wire-equivalent to the `@plasius/api` `reservation-v1`
   `ProgressiveCooldownState`.
 
 The state is one authoritative subject-wide CAS unit: streak, current commit
@@ -149,8 +149,9 @@ The immutable
 `feedbackCommittedAcceptanceDeliveryOutboxEntitySchema` row is created in the
 same pseudonymous partition transaction as the successful control commit,
 including commits reached through reconciliation. It contains `stateId`,
-`reservationId`, the closed submission kind, the server-owned commit anchor,
-the delivery and hard-delete bounds, TTL, and revision zero. It has no packet
+`reservationId`, the closed submission kind, separate server-owned acceptance
+and control-commit epochs, the delivery and hard-delete bounds, TTL, and
+revision zero. It has no packet
 ID, content locator/hash, accepted content/time string, draft, idempotency or
 attempt-authority value, narrative, request metadata, or account field.
 
@@ -162,12 +163,17 @@ pre-commit packet orphan never receives a delivery row, while a response-loss
 or worker crash leaves enough state for replay without retaining a durable
 content join in the control plane.
 
-For bugs, the interval from `committedAtMs` to eligibility expiry is exactly
-one schema-owned cooldown-ladder duration. For reviews it is exactly the
-schema-owned 30-day deny. `deliveryUntilMs` is that expiry plus six days and
-`hardDeleteByMs` is exactly one further day. `ttlSeconds` is the floor-rounded
-live interval ending at `deliveryUntilMs`; adapters shorten it from trusted
-persistence time. This gives delivery a bounded outage window while requiring
+For bugs, the interval from `acceptedAtMs` to eligibility expiry is exactly one
+schema-owned cooldown-ladder duration. For reviews it is exactly the
+schema-owned 30-day deny. `acceptedAtMs` is the control reservation epoch and
+must equal the immutable packet's validated acceptance time; `committedAtMs` is
+the later successful control transition and may not precede it.
+`deliveryUntilMs` is eligibility expiry plus six days and `hardDeleteByMs` is
+exactly one further day. `ttlSeconds` is the floor-rounded live interval from
+`committedAtMs` to `deliveryUntilMs`; adapters shorten it from trusted
+persistence time. This prevents write or reconciliation latency extending the
+eligibility or privacy windows while giving delivery a bounded outage window
+and requiring
 live data, versions, soft deletes, and backups to disappear no later than seven
 days after cooldown/eligibility expiry.
 

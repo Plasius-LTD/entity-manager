@@ -150,7 +150,8 @@ deadline, not permission to extend retention through soft delete or backups.
 
 The progressive bug controller is persisted as one authoritative row per
 canonical `fbs1.*` state ID. Its nested `state` is wire-equivalent to
-`@plasius/api` 1.1.1 `ProgressiveCooldownState`, including owner-bound
+the `@plasius/api` `reservation-v1` `ProgressiveCooldownState`, including
+reservation-time acceptance anchoring and owner-bound
 `attemptGeneration`/`attemptTokenDigest` authority and the `writing` state;
 the envelope adds only the row ID, numeric CAS revision, server write epoch,
 and deletion TTL. Validate updates with the current row:
@@ -191,7 +192,8 @@ deadline is exactly one day later.
 `feedbackCommittedAcceptanceDeliveryOutboxEntitySchema` is a second,
 purpose-specific immutable control row created atomically with the successful
 control commit. It carries only the canonical keyed state ID, reservation ID,
-closed packet kind, server acceptance/commit epoch, delivery/deletion bounds,
+closed packet kind, separate server acceptance and control-commit epochs,
+delivery/deletion bounds,
 TTL, and revision zero. It contains no packet ID, accepted content/time string,
 Blob locator/hash, idempotency or attempt-authority value, request metadata,
 narrative, ciphertext, or pixels. The trusted delivery worker derives the
@@ -199,7 +201,10 @@ packet ID transiently, verifies the immutable packet, writes the separate
 identifier-free acceptance evidence, and only then conditionally deletes this
 row.
 
-For a bug row, the eligibility interval is exactly one step from the closed
+The acceptance epoch is the server reservation time verified against the
+immutable packet; eligibility is anchored to it while live TTL is shortened
+from the later control commit. For a bug row, the eligibility interval is
+exactly one step from the closed
 `5m → 15m → 1h → 6h → 24h` ladder; for a review it is exactly 30 days. Live
 delivery remains available for six further days and the final day is reserved
 for explicit deletion, absence verification, and bounded backup expiry. Thus

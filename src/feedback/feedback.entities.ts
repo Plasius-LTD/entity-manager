@@ -1353,7 +1353,7 @@ function validateProgressiveReservation(
   const expectedCooldownUntil =
     expectedDuration === undefined
       ? undefined
-      : safeAddMilliseconds(committedAtMs, expectedDuration);
+      : safeAddMilliseconds(input.reservedAtMs, expectedDuration);
   const quietResetAt = safeAddMilliseconds(
     committedAtMs,
     PROGRESSIVE_COOLDOWN_RESET_MS,
@@ -1580,6 +1580,10 @@ function validateProgressiveAggregateLifecycle(
     (latest, record) => Math.max(latest, record.committedAtMs),
     -1,
   );
+  const maximumCommittedCooldownUntil = committed.reduce(
+    (latest, record) => Math.max(latest, record.cooldownUntilMs),
+    -1,
+  );
 
   if (streak === 0) {
     if (
@@ -1604,9 +1608,9 @@ function validateProgressiveAggregateLifecycle(
       !committed.some(
         (record) =>
           record.committedAtMs === stateRecord.lastCommittedAtMs &&
-          record.committedStreak === streak &&
-          record.cooldownUntilMs === stateRecord.cooldownUntilMs,
-      )
+          record.committedStreak === streak,
+      ) ||
+      stateRecord.cooldownUntilMs !== maximumCommittedCooldownUntil
     ) {
       return false;
     }
@@ -1813,11 +1817,16 @@ function validateProgressiveAggregateTransition(
           existingById.get(reservation.reservationId),
         ),
     );
+    if (changed?.cooldownUntilMs === undefined) return false;
+    const expectedCooldownUntilMs = Math.max(
+      baseCooldownUntilMs ?? changed.cooldownUntilMs,
+      changed.cooldownUntilMs,
+    );
     return (
-      changed?.committedStreak === expectedStreak &&
+      changed.committedStreak === expectedStreak &&
       next.state.streak === expectedStreak &&
       next.state.lastCommittedAtMs === next.writtenAtMs &&
-      next.state.cooldownUntilMs === changed.cooldownUntilMs
+      next.state.cooldownUntilMs === expectedCooldownUntilMs
     );
   }
 
@@ -2061,7 +2070,9 @@ function validateCommittedAcceptanceDeliveryOutboxLifecycle(
   input: Record<string, unknown>,
 ): boolean {
   if (
+    !isNonnegativeSafeInteger(input.acceptedAtMs) ||
     !isNonnegativeSafeInteger(input.committedAtMs) ||
+    input.acceptedAtMs > input.committedAtMs ||
     !isNonnegativeSafeInteger(input.deliveryUntilMs) ||
     !isNonnegativeSafeInteger(input.hardDeleteByMs) ||
     !isNonnegativeSafeInteger(input.ttlSeconds)
@@ -2071,7 +2082,7 @@ function validateCommittedAcceptanceDeliveryOutboxLifecycle(
 
   const cooldownDurationMs =
     input.deliveryUntilMs -
-    input.committedAtMs -
+    input.acceptedAtMs -
     COMMITTED_ACCEPTANCE_DELIVERY_GRACE_MS;
   const validCooldown =
     input.submissionKind === FeedbackSubmissionKind.REVIEW
@@ -2081,7 +2092,7 @@ function validateCommittedAcceptanceDeliveryOutboxLifecycle(
   if (!validCooldown) return false;
 
   const eligibilityUntilMs = safeAddMilliseconds(
-    input.committedAtMs,
+    input.acceptedAtMs,
     cooldownDurationMs,
   );
   const deliveryUntilMs =
@@ -2159,7 +2170,10 @@ export const feedbackCommittedAcceptanceDeliveryOutboxEntityShape = {
     .description("Closed packet projection branch for evidence delivery.")
     .enum(Object.values(FeedbackSubmissionKind)),
   committedAtMs: internalMillisecondField(
-    "Server-owned immutable-acceptance epoch anchoring eligibility.",
+    "Server-owned control transition epoch used to shorten live TTL.",
+  ).immutable(),
+  acceptedAtMs: internalMillisecondField(
+    "Server-owned reservation epoch anchoring immutable acceptance and eligibility.",
   ).immutable(),
   deliveryUntilMs: internalMillisecondField(
     "Final live delivery deadline after the bounded post-eligibility grace period.",

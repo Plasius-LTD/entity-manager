@@ -155,7 +155,7 @@ function committedAggregate(
   if (cooldownDurationMs === undefined) {
     throw new Error("Synthetic cooldown step is missing.");
   }
-  const cooldownUntilMs = committedAtMs + cooldownDurationMs;
+  const cooldownUntilMs = source.reservedAtMs + cooldownDurationMs;
   const committed: FeedbackProgressiveCooldownReservationRecord = {
     reservationId: source.reservationId,
     idempotencyDigest: source.idempotencyDigest,
@@ -324,7 +324,7 @@ describe("feedback progressive-cooldown aggregate", () => {
     ).toBe(true);
   });
 
-  it("orders independent late commits deterministically in one millisecond", () => {
+  it("orders late commits without regressing a newer acceptance cooldown", () => {
     const firstReleasedAtMs = BASE_MS + MINUTE_MS;
     const secondReleasedAtMs = firstReleasedAtMs + 1;
     const firstReleased: FeedbackProgressiveCooldownReservationRecord = {
@@ -339,10 +339,10 @@ describe("feedback progressive-cooldown aggregate", () => {
         reservationId: secondReservationId,
         idempotencyDigest: secondIdempotencyDigest,
         attemptTokenDigest: secondAttemptTokenDigest,
-        reservedAtMs: BASE_MS + 1,
+        reservedAtMs: BASE_MS - 11 * MINUTE_MS,
         leaseExpiresAtMs:
-          BASE_MS +
-          1 +
+          BASE_MS -
+          11 * MINUTE_MS +
           FEEDBACK_PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS,
       }),
       status: FeedbackReservationState.RELEASED,
@@ -398,7 +398,7 @@ describe("feedback progressive-cooldown aggregate", () => {
         committedAtMs,
         committedStreak,
         cooldownDurationMs,
-        cooldownUntilMs: committedAtMs + cooldownDurationMs,
+        cooldownUntilMs: source.reservedAtMs + cooldownDurationMs,
         reconciliationUntilMs:
           committedAtMs +
           FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS +
@@ -432,7 +432,7 @@ describe("feedback progressive-cooldown aggregate", () => {
         schemaVersion: "1",
         streak: 2,
         lastCommittedAtMs: committedAtMs,
-        cooldownUntilMs: secondCommitted.cooldownUntilMs,
+        cooldownUntilMs: firstCommitted.cooldownUntilMs,
         reservations: [secondCommitted, firstCommitted],
         hardDeleteByMs: commitHardDeleteByMs,
       },
@@ -444,6 +444,9 @@ describe("feedback progressive-cooldown aggregate", () => {
         released,
       ).valid,
     ).toBe(true);
+    expect(secondCommitted.cooldownUntilMs ?? 0).toBeLessThan(
+      firstCommitted.cooldownUntilMs ?? 0,
+    );
     expect(
       feedbackProgressiveCooldownAggregateEntitySchema.validate(
         afterSecondCommit,
@@ -532,7 +535,7 @@ describe("feedback progressive-cooldown aggregate", () => {
         committedAtMs,
         committedStreak,
         cooldownDurationMs,
-        cooldownUntilMs: committedAtMs + cooldownDurationMs,
+        cooldownUntilMs: reservedAtMs + cooldownDurationMs,
         reconciliationUntilMs:
           committedAtMs +
           FEEDBACK_PROGRESSIVE_COOLDOWN_RESET_MS +

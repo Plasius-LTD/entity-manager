@@ -78,7 +78,7 @@ describe("feedback final release contract compatibility", () => {
     );
   });
 
-  it("accepts the owner-bound reserve, write, and commit states from @plasius/api 1.1.1", () => {
+  it("accepts reservation-v1 owner-bound states from @plasius/api", () => {
     const schema = entityManager.feedbackProgressiveCooldownAggregateEntitySchema;
     const reserved = aggregate(ownerBoundReservation());
     const writing = aggregate(
@@ -88,7 +88,7 @@ describe("feedback final release contract compatibility", () => {
     );
     const committedAtMs = BASE_MS + 2 * MINUTE_MS;
     const cooldownDurationMs = SCHEMA_FEEDBACK_BUG_COOLDOWN_SECONDS[0] * 1_000;
-    const cooldownUntilMs = committedAtMs + cooldownDurationMs;
+    const cooldownUntilMs = BASE_MS + cooldownDurationMs;
     const reconciliationUntilMs = committedAtMs + 8 * DAY_MS;
     const hardDeleteByMs = reconciliationUntilMs + DAY_MS;
     const committed = {
