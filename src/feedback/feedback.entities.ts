@@ -16,6 +16,10 @@ const MAX_TTL_SECONDS = 3 * 366 * 24 * 60 * 60;
 const REVIEW_DENY_SECONDS = FEEDBACK_REVIEW_COOLDOWN_SECONDS;
 const BUG_QUIET_RESET_SECONDS = 48 * 60 * 60;
 const DRAFT_TTL_SECONDS = 24 * 60 * 60;
+const BUG_HEALTH_METRICS_COUNTER_SHARD_COUNT = 16;
+const BUG_HEALTH_METRICS_FINALIZATION_DELAY_SECONDS = 2 * 60;
+const BUG_HEALTH_METRICS_LIVE_RETENTION_SECONDS = 9 * 24 * 60 * 60;
+const BUG_HEALTH_METRICS_PURGE_SAFETY_SECONDS = 24 * 60 * 60;
 const MILLISECONDS_PER_SECOND = 1_000;
 const PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS = 5 * 60 * 1_000;
 const PROGRESSIVE_COOLDOWN_RECONCILIATION_MS = 6 * 24 * 60 * 60 * 1_000;
@@ -38,6 +42,8 @@ const HOUR_WINDOW_PATTERN =
   /^hour:(\d{4}-\d{2}-\d{2}T\d{2})$/u;
 const RECONCILIATION_WINDOW_PATTERN =
   /^reconcile:(\d{4}-\d{2}-\d{2}T\d{2}):(00|05|10|15|20|25|30|35|40|45|50|55)$/u;
+const BUG_HEALTH_METRICS_COUNTER_ID_PATTERN =
+  /^bug-hour:(\d{4}-\d{2}-\d{2}T\d{2}):(0[0-9]|1[0-5])$/u;
 
 /** Maximum permitted delay between logical control expiry and hard deletion. */
 export const FEEDBACK_CONTROL_MAX_HARD_DELETE_LAG_SECONDS =
@@ -49,6 +55,18 @@ export const FEEDBACK_CONTROL_PURGE_SAFETY_SECONDS =
 export const FEEDBACK_REVIEW_DENY_SECONDS = REVIEW_DENY_SECONDS;
 /** Exact lifetime of a structured, narrative-free feedback draft. */
 export const FEEDBACK_DRAFT_TTL_SECONDS = DRAFT_TTL_SECONDS;
+/** Fixed number of contention-bounding rows for one metrics hour. */
+export const FEEDBACK_BUG_HEALTH_METRICS_COUNTER_SHARD_COUNT =
+  BUG_HEALTH_METRICS_COUNTER_SHARD_COUNT;
+/** Earliest permitted seal after the end of an observed hour. */
+export const FEEDBACK_BUG_HEALTH_METRICS_FINALIZATION_DELAY_SECONDS =
+  BUG_HEALTH_METRICS_FINALIZATION_DELAY_SECONDS;
+/** Live correction horizon for the private aggregate source. */
+export const FEEDBACK_BUG_HEALTH_METRICS_LIVE_RETENTION_SECONDS =
+  BUG_HEALTH_METRICS_LIVE_RETENTION_SECONDS;
+/** Final hard-purge and bounded-backup safety interval. */
+export const FEEDBACK_BUG_HEALTH_METRICS_PURGE_SAFETY_SECONDS =
+  BUG_HEALTH_METRICS_PURGE_SAFETY_SECONDS;
 /** Exact quiet period after which the progressive bug ladder resets. */
 export const FEEDBACK_BUG_QUIET_RESET_SECONDS = BUG_QUIET_RESET_SECONDS;
 /** Progressive accepted-bug cooldown ladder, capped at 24 hours. */
@@ -1102,6 +1120,424 @@ function deepDataEqual(
     );
   });
 }
+
+const METRICS_HOUR_MS = 60 * 60 * 1_000;
+const METRICS_MINUTE_MS = 60 * 1_000;
+const METRICS_ABUSE_BLOCK_COUNT_KEY_NAMES = [
+  "fiveMinutes",
+  "fifteenMinutes",
+  "oneHour",
+  "sixHours",
+  "twentyFourHours",
+  "failClosed",
+] as const;
+type FeedbackBugHealthMetricsAbuseBlockCountKey =
+  (typeof METRICS_ABUSE_BLOCK_COUNT_KEY_NAMES)[number];
+const METRICS_ABUSE_BLOCK_COUNT_KEYS: ReadonlySet<
+  FeedbackBugHealthMetricsAbuseBlockCountKey
+> = new Set(METRICS_ABUSE_BLOCK_COUNT_KEY_NAMES);
+
+/** Closed application-owned progressive-cooldown and fail-closed counters. */
+export interface FeedbackBugHealthMetricsAbuseBlockCounts {
+  readonly fiveMinutes: number;
+  readonly fifteenMinutes: number;
+  readonly oneHour: number;
+  readonly sixHours: number;
+  readonly twentyFourHours: number;
+  readonly failClosed: number;
+}
+
+function isCanonicalMinuteTimestamp(value: unknown): value is string {
+  if (!isCanonicalUtcTimestamp(value)) return false;
+  const epoch = Date.parse(value);
+  return Number.isFinite(epoch)
+    && new Date(epoch).toISOString() === value
+    && epoch % METRICS_MINUTE_MS === 0;
+}
+
+function isCanonicalMetricsHour(
+  windowStart: unknown,
+  windowEnd: unknown,
+): windowStart is string {
+  if (
+    !isCanonicalUtcTimestamp(windowStart)
+    || !isCanonicalUtcTimestamp(windowEnd)
+  ) {
+    return false;
+  }
+  const start = Date.parse(windowStart);
+  const end = Date.parse(windowEnd);
+  return Number.isFinite(start)
+    && Number.isFinite(end)
+    && new Date(start).toISOString() === windowStart
+    && new Date(end).toISOString() === windowEnd
+    && start % METRICS_HOUR_MS === 0
+    && end - start === METRICS_HOUR_MS;
+}
+
+function metricsCount(value: unknown): value is number {
+  return Number.isSafeInteger(value)
+    && Number(value) >= 0
+    && Number(value) <= 1_000_000_000;
+}
+
+function metricsAbuseBlockCounts(
+  value: unknown,
+): value is FeedbackBugHealthMetricsAbuseBlockCounts {
+  return hasExactEnumerableDataKeys(
+    value,
+    METRICS_ABUSE_BLOCK_COUNT_KEYS,
+  ) && [...METRICS_ABUSE_BLOCK_COUNT_KEYS].every((key) =>
+    metricsCount(value[key]));
+}
+
+function metricsHeartbeatSlots(value: unknown): value is readonly number[] {
+  if (!isDenseDataArray(value) || value.length > 60) return false;
+  let previous = -1;
+  for (const slot of value) {
+    if (
+      !Number.isSafeInteger(slot)
+      || Number(slot) < 0
+      || Number(slot) > 59
+      || Number(slot) <= previous
+    ) {
+      return false;
+    }
+    previous = Number(slot);
+  }
+  return true;
+}
+
+function metricsCounterNestedData(input: Record<string, unknown>): boolean {
+  return metricsAbuseBlockCounts(input.abuseBlockCounts)
+    && metricsHeartbeatSlots(input.heartbeatMinuteSlots);
+}
+
+function metricsCounterIdentityMatches(
+  counterId: unknown,
+  windowStart: unknown,
+  shard: unknown,
+): boolean {
+  if (
+    typeof counterId !== "string"
+    || typeof windowStart !== "string"
+    || !Number.isSafeInteger(shard)
+  ) {
+    return false;
+  }
+  const match = BUG_HEALTH_METRICS_COUNTER_ID_PATTERN.exec(counterId);
+  return match?.[1] === windowStart.slice(0, 13)
+    && Number(match[2]) === shard;
+}
+
+function metricsCounterLifecycle(input: Record<string, unknown>): boolean {
+  if (
+    !isCanonicalMetricsHour(input.windowStart, input.windowEnd)
+    || !isCanonicalMinuteTimestamp(input.updatedAt)
+    || !isCanonicalUtcTimestamp(input.expiresAt)
+    || !isCanonicalUtcTimestamp(input.hardDeleteAt)
+  ) {
+    return false;
+  }
+  const windowStart = Date.parse(input.windowStart);
+  const windowEnd = Date.parse(input.windowEnd as string);
+  const updatedAt = Date.parse(input.updatedAt);
+  const expiresAt = Date.parse(input.expiresAt);
+  const hardDeleteAt = Date.parse(input.hardDeleteAt);
+  return updatedAt >= windowStart
+    && updatedAt < expiresAt
+    && expiresAt === windowEnd
+      + BUG_HEALTH_METRICS_LIVE_RETENTION_SECONDS * MILLISECONDS_PER_SECOND
+    && hardDeleteAt === expiresAt
+      + BUG_HEALTH_METRICS_PURGE_SAFETY_SECONDS * MILLISECONDS_PER_SECOND
+    && input.ttlSeconds === (expiresAt - updatedAt) / MILLISECONDS_PER_SECOND;
+}
+
+function metricsCounterState(input: Record<string, unknown>): boolean {
+  if (
+    !metricsCounterNestedData(input)
+    || !metricsCounterLifecycle(input)
+    || !Number.isSafeInteger(input.shard)
+    || Number(input.shard) < 0
+    || Number(input.shard) >= BUG_HEALTH_METRICS_COUNTER_SHARD_COUNT
+    || !metricsCounterIdentityMatches(
+      input.counterId,
+      input.windowStart,
+      input.shard,
+    )
+    || !metricsCount(input.terminalAttemptCount)
+    || !metricsCount(input.rejectedCount)
+    || Number(input.rejectedCount) > Number(input.terminalAttemptCount)
+    || [...METRICS_ABUSE_BLOCK_COUNT_KEYS].reduce(
+      (total, key) => total
+        + Number((input.abuseBlockCounts as Record<string, unknown>)[key]),
+      0,
+    ) > Number(input.rejectedCount)
+    || (input.shard !== 0
+      && (input.heartbeatMinuteSlots as readonly unknown[]).length !== 0)
+    || typeof input.finalized !== "boolean"
+  ) {
+    return false;
+  }
+  const heartbeatMinuteSlots = input.heartbeatMinuteSlots as readonly number[];
+  if (input.finalized === false) {
+    return !Object.prototype.hasOwnProperty.call(input, "finalizedAt");
+  }
+  const earliestFinalization = Date.parse(input.windowEnd as string)
+    + BUG_HEALTH_METRICS_FINALIZATION_DELAY_SECONDS * MILLISECONDS_PER_SECOND;
+  return isCanonicalMinuteTimestamp(input.finalizedAt)
+    && input.finalizedAt === input.updatedAt
+    && Date.parse(input.finalizedAt) >= earliestFinalization
+    && (input.shard === 0
+      ? heartbeatMinuteSlots.length === 60
+      : heartbeatMinuteSlots.length === 0);
+}
+
+function metricsCounterCreation(input: Record<string, unknown>): boolean {
+  const abuseBlockCounts = input.abuseBlockCounts;
+  return metricsCounterState(input)
+    && input.finalized === false
+    && input.revision === 0
+    && input.terminalAttemptCount === 0
+    && input.rejectedCount === 0
+    && metricsAbuseBlockCounts(abuseBlockCounts)
+    && [...METRICS_ABUSE_BLOCK_COUNT_KEYS].every(
+      (key) => abuseBlockCounts[key] === 0,
+    )
+    && metricsHeartbeatSlots(input.heartbeatMinuteSlots)
+    && input.heartbeatMinuteSlots.length === 0
+    && Date.parse(input.updatedAt as string)
+      < Date.parse(input.windowEnd as string);
+}
+
+function metricsCountsEqual(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): boolean {
+  return left.terminalAttemptCount === right.terminalAttemptCount
+    && left.rejectedCount === right.rejectedCount
+    && deepDataEqual(left.abuseBlockCounts, right.abuseBlockCounts);
+}
+
+function metricsOutcomeTransition(
+  next: Record<string, unknown>,
+  existing: Record<string, unknown>,
+): boolean {
+  const nextAbuse = next.abuseBlockCounts as Record<string, number>;
+  const existingAbuse = existing.abuseBlockCounts as Record<string, number>;
+  const abuseDeltas = [...METRICS_ABUSE_BLOCK_COUNT_KEYS].map(
+    (key) => nextAbuse[key]! - existingAbuse[key]!,
+  );
+  const rejectedDelta = Number(next.rejectedCount)
+    - Number(existing.rejectedCount);
+  return Number(next.terminalAttemptCount)
+      - Number(existing.terminalAttemptCount) === 1
+    && (rejectedDelta === 0 || rejectedDelta === 1)
+    && abuseDeltas.every((delta) => delta === 0 || delta === 1)
+    && abuseDeltas.reduce<number>((total, delta) => total + delta, 0) <= 1
+    && (abuseDeltas.some((delta) => delta === 1)
+      ? rejectedDelta === 1
+      : true)
+    && deepDataEqual(
+      next.heartbeatMinuteSlots,
+      existing.heartbeatMinuteSlots,
+    )
+    && next.finalized === false
+    && existing.finalized === false
+    && Date.parse(next.updatedAt as string)
+      < Date.parse(next.windowEnd as string);
+}
+
+function metricsHeartbeatTransition(
+  next: Record<string, unknown>,
+  existing: Record<string, unknown>,
+): boolean {
+  if (
+    next.shard !== 0
+    || next.finalized !== false
+    || existing.finalized !== false
+    || !metricsCountsEqual(next, existing)
+  ) {
+    return false;
+  }
+  const nextSlots = next.heartbeatMinuteSlots as readonly number[];
+  const existingSlots = existing.heartbeatMinuteSlots as readonly number[];
+  if (
+    nextSlots.length !== existingSlots.length + 1
+    || existingSlots.some((slot) => !nextSlots.includes(slot))
+  ) {
+    return false;
+  }
+  const added = nextSlots.find((slot) => !existingSlots.includes(slot));
+  const expectedUpdatedAt = added === undefined
+    ? undefined
+    : Date.parse(next.windowStart as string) + added * METRICS_MINUTE_MS;
+  return added === existingSlots.length
+    && expectedUpdatedAt !== undefined
+    && Date.parse(next.updatedAt as string) === expectedUpdatedAt;
+}
+
+function metricsFinalizationTransition(
+  next: Record<string, unknown>,
+  existing: Record<string, unknown>,
+): boolean {
+  return existing.finalized === false
+    && next.finalized === true
+    && metricsCountsEqual(next, existing)
+    && deepDataEqual(
+      next.heartbeatMinuteSlots,
+      existing.heartbeatMinuteSlots,
+    );
+}
+
+function metricsCounterTransition(
+  next: Record<string, unknown>,
+  existing: Record<string, unknown>,
+): boolean {
+  if (
+    !metricsCounterState(next)
+    || !metricsCounterState(existing)
+    || existing.finalized !== false
+    || next.counterId !== existing.counterId
+    || next.windowStart !== existing.windowStart
+    || next.windowEnd !== existing.windowEnd
+    || next.shard !== existing.shard
+    || next.expiresAt !== existing.expiresAt
+    || next.hardDeleteAt !== existing.hardDeleteAt
+    || Date.parse(next.updatedAt as string)
+      < Date.parse(existing.updatedAt as string)
+  ) {
+    return false;
+  }
+  const transitions = [
+    metricsOutcomeTransition(next, existing),
+    metricsHeartbeatTransition(next, existing),
+    metricsFinalizationTransition(next, existing),
+  ].filter(Boolean);
+  return transitions.length === 1;
+}
+
+export const feedbackBugHealthMetricsAbuseBlockCountsShape = {
+  fiveMinutes: countField("Five-minute cooldown blocks."),
+  fifteenMinutes: countField("Fifteen-minute cooldown blocks."),
+  oneHour: countField("One-hour cooldown blocks."),
+  sixHours: countField("Six-hour cooldown blocks."),
+  twentyFourHours: countField("Twenty-four-hour cooldown blocks."),
+  failClosed: countField("Fail-closed application dependency blocks."),
+};
+
+export const feedbackBugHealthMetricsCounterEntityShape = {
+  counterId: field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description("Deterministic identifier for one UTC hour and fixed shard.")
+    .validator((value) => BUG_HEALTH_METRICS_COUNTER_ID_PATTERN.test(value)),
+  windowStart: canonicalTimestampField(
+    "Canonical UTC start of the aggregate hour.",
+  ).immutable(),
+  windowEnd: canonicalTimestampField(
+    "Exclusive canonical UTC end of the aggregate hour.",
+  ).immutable(),
+  shard: field
+    .number()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description("Fixed contention-bounding shard index.")
+    .validator((value) => Number.isSafeInteger(value)
+      && value >= 0
+      && value < BUG_HEALTH_METRICS_COUNTER_SHARD_COUNT),
+  terminalAttemptCount: countField(
+    "Terminal application bug-submission attempts.",
+  ),
+  rejectedCount: countField("Rejected terminal application attempts."),
+  abuseBlockCounts: field
+    .object(feedbackBugHealthMetricsAbuseBlockCountsShape)
+    .internal()
+    .required()
+    .version("1.0")
+    .description("Closed application-owned cooldown and fail-closed bands.")
+    .as<FeedbackBugHealthMetricsAbuseBlockCounts>(),
+  heartbeatMinuteSlots: field
+    .array(
+      field
+        .number()
+        .internal()
+        .required()
+        .version("1.0")
+        .validator((value) => Number.isSafeInteger(value)
+          && value >= 0
+          && value <= 59),
+    )
+    .internal()
+    .required()
+    .max(60)
+    .version("1.0")
+    .description("Sorted shard-zero source-completeness minute slots."),
+  finalized: field
+    .boolean()
+    .internal()
+    .required()
+    .version("1.0")
+    .description("Terminal seal for this exact counter shard."),
+  finalizedAt: field
+    .string()
+    .internal()
+    .optional()
+    .version("1.0")
+    .description("Minute-rounded server finalization instant.")
+    .validator(isCanonicalMinuteTimestamp),
+  updatedAt: field
+    .string()
+    .internal()
+    .required()
+    .version("1.0")
+    .description("Minute-rounded server conditional-write instant.")
+    .validator(isCanonicalMinuteTimestamp),
+  expiresAt: canonicalTimestampField(
+    "End of the nine-day live correction horizon.",
+  ).immutable(),
+  hardDeleteAt: canonicalTimestampField(
+    "Absolute deadline for deleting live and bounded backup copies.",
+  ).immutable(),
+  ttlSeconds: ttlField(),
+  revision: revisionField(),
+};
+
+/**
+ * Identifier-free, fixed-hour mutable counter shard for the isolated metrics
+ * source. Persistence must combine revision validation with an ETag or
+ * transactional condition and must never treat a missing hour as zero.
+ */
+export const feedbackBugHealthMetricsCounterEntitySchema =
+  closeFeedbackSchema(
+    createSchema(
+      feedbackBugHealthMetricsCounterEntityShape,
+      "feedbackBugHealthMetricsCounterEntity",
+      {
+        version: "1.0.0",
+        piiEnforcement: "strict",
+        table: "feedbackMetricsControl",
+        unknownFields: "reject",
+        identity: "exact",
+        schemaValidator: (entity) =>
+          metricsCounterState(entity as Record<string, unknown>),
+      },
+    ),
+    "increment",
+    metricsCounterTransition,
+    metricsCounterCreation,
+    () => true,
+    deepDataEqual,
+    metricsCounterNestedData,
+  );
+export type FeedbackBugHealthMetricsCounterEntity = Infer<
+  typeof feedbackBugHealthMetricsCounterEntityShape
+>;
 
 function progressiveAggregateReplayValueEqual(
   left: unknown,
