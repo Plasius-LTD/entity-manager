@@ -101,6 +101,9 @@ console.log(mapped.issues[0]?.fieldKey, mapped.issues[0]?.messageKey, message);
   `systemManagedFeedbackReportEntitySchema`,
   `systemManagedFeedbackCheckpointEntitySchema`, and
   `systemManagedFeedbackReconstructionEntitySchema`
+- Identifier-free reporting source:
+  `feedbackBugHealthMetricsCounterEntitySchema` and the closed
+  `feedbackBugHealthMetricsAbuseBlockCountsShape`
 - Isolated reporter controls:
   `feedbackProgressiveCooldownAggregateEntitySchema`,
   `feedbackCommitReconciliationOutboxEntitySchema`,
@@ -131,6 +134,25 @@ canonical 22-character encoding of 128 random bits. Validators reject non-zero
 unused pad bits, so one binary token cannot have multiple textual aliases. Raw
 account subjects, narrative, pixels, network metadata, and arbitrary extra
 fields are rejected.
+
+Hourly bug-health source counters are kept in the distinct
+`feedbackMetricsControl` table. Sixteen deterministic shards per canonical UTC
+hour contain only terminal application-attempt totals, rejected totals, fixed
+progressive-cooldown/fail-closed bands, shard-zero minute heartbeat slots, and
+system lifecycle/CAS state. There is no reporter, pseudonym, packet join,
+request metadata, URL, route, narrative, client timestamp, or exact event
+timestamp. The application-owned source deliberately has no `edge-blocked`
+field and must never derive one from raw WAF or access logs.
+
+One conditional revision records exactly one terminal outcome, one new
+contiguous heartbeat slot, or one terminal finalisation. Shard zero must carry
+all 60 heartbeat slots before any exact hour is admissible. Finalisation is at
+least two minutes after the hour ends, the live correction source expires nine
+days after the hour, and bounded backup deletion is due one day later. A site
+adapter must combine schema validation with ETags/transactions, read all 16
+exact row IDs, and fail a missing or partial hour closed; absence is never an
+all-zero report. See [ADR-0009](./docs/adrs/adr-0009-identifier-free-feedback-metrics-counters.md)
+and the [counter design](./docs/design/feedback-bug-health-metrics-counters.md).
 
 All reporter-control fields are internal, so default serialization exposes no
 pseudonym, reservation, counter, or expiry. The aggregate state ID and its

@@ -11,6 +11,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Added**
   - (placeholder)
+  - Add a closed, identifier-free 16-shard hourly bug-health counter entity
+    with genuine terminal-attempt/rejection/cooldown aggregates and contiguous
+    minute completeness evidence for feedback reporting task #72.
 
 - **Changed**
   - (placeholder)
@@ -23,6 +26,10 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Security**
   - (placeholder)
+  - Reject reporter, request, network, narrative, packet-join, client-time,
+    raw-edge, hostile-object and unknown fields from the metrics source; make
+    counts monotonic, finalisation terminal, retention non-extendable, and
+    missing source hours ineligible for zero synthesis.
 
 ## [1.2.0] - 2026-08-26
 
