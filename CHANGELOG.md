@@ -11,6 +11,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Added**
   - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.2.1] - 2026-08-28
+
+- **Added**
+  - (placeholder)
   - Add a closed, identifier-free 16-shard hourly bug-health counter entity
     with genuine terminal-attempt/rejection/cooldown aggregates and contiguous
     minute completeness evidence for feedback reporting task #72.
@@ -570,3 +584,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.1.1]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.1.1
 [1.1.2]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.1.2
 [1.2.0]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.2.0
+[1.2.1]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.2.1
