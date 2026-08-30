@@ -9,3 +9,4 @@
 - [ADR-0007: User names carry explicit completeness](./adr-0007-explicit-user-name-completeness.md)
 - [ADR-0008: Separate system feedback entities from reporter controls](./adr-0008-feedback-system-and-control-entities.md)
 - [ADR-0009: Use closed identifier-free shards for feedback bug-health counters](./adr-0009-identifier-free-feedback-metrics-counters.md)
+- [ADR-0010: Reconcile counter commits with atomic short-lived receipts](./adr-0010-feedback-metrics-atomic-operation-receipts.md)

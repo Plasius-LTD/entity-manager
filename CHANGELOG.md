@@ -10,7 +10,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Add an immutable, server-random, identifier-free operation receipt for
+    atomically reconciling ambiguous feedback metrics counter commits without
+    duplicating or misclassifying the terminal response.
 
 - **Changed**
   - (placeholder)
@@ -19,7 +21,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Security**
-  - (placeholder)
+  - Reject exact feedback bug-health counter replay writes and expose a
+    separate closed snapshot validator so adapters can validate provider reads
+    without refreshing provider-managed TTL or extending retention.
 
 ## [1.2.1] - 2026-08-28
 

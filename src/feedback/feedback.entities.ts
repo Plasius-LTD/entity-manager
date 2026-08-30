@@ -20,6 +20,9 @@ const BUG_HEALTH_METRICS_COUNTER_SHARD_COUNT = 16;
 const BUG_HEALTH_METRICS_FINALIZATION_DELAY_SECONDS = 2 * 60;
 const BUG_HEALTH_METRICS_LIVE_RETENTION_SECONDS = 9 * 24 * 60 * 60;
 const BUG_HEALTH_METRICS_PURGE_SAFETY_SECONDS = 24 * 60 * 60;
+const BUG_HEALTH_METRICS_OPERATION_RECEIPT_TTL_SECONDS = 15 * 60;
+const BUG_HEALTH_METRICS_OPERATION_RECEIPT_PURGE_SAFETY_SECONDS =
+  24 * 60 * 60;
 const MILLISECONDS_PER_SECOND = 1_000;
 const PROGRESSIVE_COOLDOWN_RESERVATION_LEASE_MS = 5 * 60 * 1_000;
 const PROGRESSIVE_COOLDOWN_RECONCILIATION_MS = 6 * 24 * 60 * 60 * 1_000;
@@ -67,6 +70,12 @@ export const FEEDBACK_BUG_HEALTH_METRICS_LIVE_RETENTION_SECONDS =
 /** Final hard-purge and bounded-backup safety interval. */
 export const FEEDBACK_BUG_HEALTH_METRICS_PURGE_SAFETY_SECONDS =
   BUG_HEALTH_METRICS_PURGE_SAFETY_SECONDS;
+/** Short live lifetime for atomic counter-operation reconciliation evidence. */
+export const FEEDBACK_BUG_HEALTH_METRICS_OPERATION_RECEIPT_TTL_SECONDS =
+  BUG_HEALTH_METRICS_OPERATION_RECEIPT_TTL_SECONDS;
+/** Bounded deletion and backup-expiry safety window for operation receipts. */
+export const FEEDBACK_BUG_HEALTH_METRICS_OPERATION_RECEIPT_PURGE_SAFETY_SECONDS =
+  BUG_HEALTH_METRICS_OPERATION_RECEIPT_PURGE_SAFETY_SECONDS;
 /** Exact quiet period after which the progressive bug ladder resets. */
 export const FEEDBACK_BUG_QUIET_RESET_SECONDS = BUG_QUIET_RESET_SECONDS;
 /** Progressive accepted-bug cooldown ladder, capped at 24 hours. */
@@ -154,6 +163,22 @@ export const FeedbackReservationState = {
 } as const;
 export type FeedbackReservationState =
   (typeof FeedbackReservationState)[keyof typeof FeedbackReservationState];
+
+/** Closed terminal outcome bound to one atomic metrics counter operation. */
+export const FeedbackBugHealthMetricsReceiptOutcome = {
+  ACCEPTED: "accepted",
+  REJECTED: "rejected",
+  COOLDOWN_FIVE_MINUTES: "cooldown-five-minutes",
+  COOLDOWN_FIFTEEN_MINUTES: "cooldown-fifteen-minutes",
+  COOLDOWN_ONE_HOUR: "cooldown-one-hour",
+  COOLDOWN_SIX_HOURS: "cooldown-six-hours",
+  COOLDOWN_TWENTY_FOUR_HOURS: "cooldown-twenty-four-hours",
+  FAIL_CLOSED: "fail-closed",
+} as const;
+export type FeedbackBugHealthMetricsReceiptOutcome =
+  (typeof FeedbackBugHealthMetricsReceiptOutcome)[
+    keyof typeof FeedbackBugHealthMetricsReceiptOutcome
+  ];
 
 const DEPRECATED_FEEDBACK_RESERVATION_STATES = [
   FeedbackReservationState.RESERVED,
@@ -1513,11 +1538,186 @@ export const feedbackBugHealthMetricsCounterEntityShape = {
  * source. Persistence must combine revision validation with an ETag or
  * transactional condition and must never treat a missing hour as zero.
  */
+const feedbackBugHealthMetricsCounterBaseSchema = createSchema(
+  feedbackBugHealthMetricsCounterEntityShape,
+  "feedbackBugHealthMetricsCounterEntity",
+  {
+    version: "1.0.0",
+    piiEnforcement: "strict",
+    table: "feedbackMetricsControl",
+    unknownFields: "reject",
+    identity: "exact",
+    schemaValidator: (entity) =>
+      metricsCounterState(entity as Record<string, unknown>),
+  },
+);
+const validateFeedbackBugHealthMetricsCounterSnapshotBase =
+  feedbackBugHealthMetricsCounterBaseSchema.validate.bind(
+    feedbackBugHealthMetricsCounterBaseSchema,
+  );
+const feedbackBugHealthMetricsCounterFields = new Set(
+  Object.keys(feedbackBugHealthMetricsCounterBaseSchema._shape),
+);
+
+/**
+ * Validate a provider snapshot without granting permission to persist it.
+ *
+ * Storage adapters must use this boundary when reading an existing row, then
+ * use `feedbackBugHealthMetricsCounterEntitySchema` for a material CAS
+ * transition. A successful snapshot validation is never permission to replace,
+ * upsert, touch, or otherwise replay the provider document.
+ */
+export function validateFeedbackBugHealthMetricsCounterSnapshot(
+  input: unknown,
+) {
+  if (!isRecord(input)) {
+    return invalidResult("Feedback metrics counter snapshot must be a plain object.");
+  }
+  const keys = ownDataKeys(input);
+  if (
+    keys === undefined
+    || keys.some((key) => !feedbackBugHealthMetricsCounterFields.has(key))
+    || !Number.isSafeInteger(input.revision)
+    || Number(input.revision) < 0
+    || !metricsCounterNestedData(input)
+  ) {
+    return invalidResult("Invalid feedback metrics counter snapshot.");
+  }
+  return validateFeedbackBugHealthMetricsCounterSnapshotBase(input);
+}
+
 export const feedbackBugHealthMetricsCounterEntitySchema =
   closeFeedbackSchema(
+    feedbackBugHealthMetricsCounterBaseSchema,
+    "increment",
+    metricsCounterTransition,
+    metricsCounterCreation,
+    () => false,
+    deepDataEqual,
+    metricsCounterNestedData,
+  );
+export type FeedbackBugHealthMetricsCounterEntity = Infer<
+  typeof feedbackBugHealthMetricsCounterEntityShape
+>;
+
+const METRICS_RECEIPT_OUTCOMES = Object.freeze(
+  Object.values(FeedbackBugHealthMetricsReceiptOutcome),
+);
+
+function metricsOperationReceiptState(
+  input: Record<string, unknown>,
+): boolean {
+  if (
+    typeof input.receiptId !== "string"
+    || !UUID_V4_PATTERN.test(input.receiptId)
+    || typeof input.counterId !== "string"
+    || !Number.isSafeInteger(input.shard)
+    || !metricsCounterIdentityMatches(
+      input.counterId,
+      input.windowStart,
+      input.shard,
+    )
+    || !isCanonicalMetricsHour(input.windowStart, input.windowEnd)
+    || !Number.isSafeInteger(input.counterRevisionAfter)
+    || Number(input.counterRevisionAfter) < 1
+    || !METRICS_RECEIPT_OUTCOMES.includes(
+      input.outcome as FeedbackBugHealthMetricsReceiptOutcome,
+    )
+    || !isCanonicalMinuteTimestamp(input.recordedAt)
+    || !isCanonicalUtcTimestamp(input.expiresAt)
+    || !isCanonicalUtcTimestamp(input.hardDeleteAt)
+    || input.ttlSeconds
+      !== BUG_HEALTH_METRICS_OPERATION_RECEIPT_TTL_SECONDS
+    || input.revision !== 0
+  ) {
+    return false;
+  }
+
+  const recordedAt = Date.parse(input.recordedAt);
+  const windowStart = Date.parse(input.windowStart as string);
+  const windowEnd = Date.parse(input.windowEnd as string);
+  const expiresAt = Date.parse(input.expiresAt);
+  const hardDeleteAt = Date.parse(input.hardDeleteAt);
+  return recordedAt >= windowStart
+    && recordedAt < windowEnd
+    && expiresAt === recordedAt
+      + BUG_HEALTH_METRICS_OPERATION_RECEIPT_TTL_SECONDS
+        * MILLISECONDS_PER_SECOND
+    && hardDeleteAt === expiresAt
+      + BUG_HEALTH_METRICS_OPERATION_RECEIPT_PURGE_SAFETY_SECONDS
+        * MILLISECONDS_PER_SECOND;
+}
+
+export const feedbackBugHealthMetricsOperationReceiptEntityShape = {
+  receiptId: artifactIdField(
+    "Server-random identity for one atomic metrics counter operation.",
+  ),
+  counterId: field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description("Exact same-partition counter identifier.")
+    .validator((value) => BUG_HEALTH_METRICS_COUNTER_ID_PATTERN.test(value)),
+  windowStart: canonicalTimestampField(
+    "Canonical UTC start of the bound counter hour.",
+  ).immutable(),
+  windowEnd: canonicalTimestampField(
+    "Exclusive canonical UTC end of the bound counter hour.",
+  ).immutable(),
+  shard: field
+    .number()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description("Exact counter shard selected by the server.")
+    .validator((value) => Number.isSafeInteger(value)
+      && value >= 0
+      && value < BUG_HEALTH_METRICS_COUNTER_SHARD_COUNT),
+  counterRevisionAfter: countField(
+    "Counter revision committed by the same transaction.",
+    1,
+    Number.MAX_SAFE_INTEGER,
+  ).immutable(),
+  outcome: field
+    .string()
+    .enum(METRICS_RECEIPT_OUTCOMES)
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description("Closed terminal outcome committed with the counter."),
+  recordedAt: field
+    .string()
+    .internal()
+    .immutable()
+    .required()
+    .version("1.0")
+    .description("Minute-rounded server receipt creation instant.")
+    .validator(isCanonicalMinuteTimestamp),
+  expiresAt: canonicalTimestampField(
+    "Absolute end of the fifteen-minute reconciliation lifetime.",
+  ).immutable(),
+  hardDeleteAt: canonicalTimestampField(
+    "Absolute deletion and bounded-backup deadline.",
+  ).immutable(),
+  ttlSeconds: ttlField(true),
+  revision: revisionField(true),
+};
+
+/**
+ * Immutable, identifier-free proof that one terminal outcome and one counter
+ * revision were created atomically. Adapters must partition on `counterId`,
+ * create the receipt with If-None-Match in the same transactional batch as the
+ * counter replace, and reconcile ambiguous results by exact receipt lookup.
+ */
+export const feedbackBugHealthMetricsOperationReceiptEntitySchema =
+  closeFeedbackSchema(
     createSchema(
-      feedbackBugHealthMetricsCounterEntityShape,
-      "feedbackBugHealthMetricsCounterEntity",
+      feedbackBugHealthMetricsOperationReceiptEntityShape,
+      "feedbackBugHealthMetricsOperationReceiptEntity",
       {
         version: "1.0.0",
         piiEnforcement: "strict",
@@ -1525,18 +1725,18 @@ export const feedbackBugHealthMetricsCounterEntitySchema =
         unknownFields: "reject",
         identity: "exact",
         schemaValidator: (entity) =>
-          metricsCounterState(entity as Record<string, unknown>),
+          metricsOperationReceiptState(entity as Record<string, unknown>),
       },
     ),
-    "increment",
-    metricsCounterTransition,
-    metricsCounterCreation,
-    () => true,
-    deepDataEqual,
-    metricsCounterNestedData,
+    "immutable",
+    () => false,
+    metricsOperationReceiptState,
+    undefined,
+    Object.is,
+    metricsOperationReceiptState,
   );
-export type FeedbackBugHealthMetricsCounterEntity = Infer<
-  typeof feedbackBugHealthMetricsCounterEntityShape
+export type FeedbackBugHealthMetricsOperationReceiptEntity = Infer<
+  typeof feedbackBugHealthMetricsOperationReceiptEntityShape
 >;
 
 function progressiveAggregateReplayValueEqual(

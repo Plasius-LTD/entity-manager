@@ -5,6 +5,7 @@ import {
   FEEDBACK_BUG_HEALTH_METRICS_LIVE_RETENTION_SECONDS,
   FEEDBACK_BUG_HEALTH_METRICS_PURGE_SAFETY_SECONDS,
   feedbackBugHealthMetricsCounterEntitySchema,
+  validateFeedbackBugHealthMetricsCounterSnapshot,
 } from "../src/index.js";
 
 const HOUR_START = "2026-08-28T10:00:00.000Z";
@@ -228,12 +229,14 @@ describe("identifier-free feedback bug-health counter", () => {
       feedbackBugHealthMetricsCounterEntitySchema.validate(finalized, complete)
         .valid,
     ).toBe(true);
+    expect(validateFeedbackBugHealthMetricsCounterSnapshot(finalized).valid)
+      .toBe(true);
     expect(
       feedbackBugHealthMetricsCounterEntitySchema.validate(
         structuredClone(finalized),
         finalized,
       ).valid,
-    ).toBe(true);
+    ).toBe(false);
     expect(
       feedbackBugHealthMetricsCounterEntitySchema.validate(
         update(finalized, { terminalAttemptCount: 1 }),
@@ -325,6 +328,38 @@ describe("identifier-free feedback bug-health counter", () => {
       feedbackBugHealthMetricsCounterEntitySchema.validate(extended, initial)
         .valid,
     ).toBe(false);
+  });
+
+  it("validates persisted snapshots without authorising replay writes", () => {
+    const initial = counter();
+    const accepted = update(initial, {
+      terminalAttemptCount: 1,
+      updatedAt: "2026-08-28T10:01:00.000Z",
+    });
+
+    expect(validateFeedbackBugHealthMetricsCounterSnapshot(initial).valid)
+      .toBe(true);
+    expect(validateFeedbackBugHealthMetricsCounterSnapshot(accepted).valid)
+      .toBe(true);
+    expect(
+      feedbackBugHealthMetricsCounterEntitySchema.validate(initial, initial)
+        .valid,
+    ).toBe(false);
+    expect(
+      feedbackBugHealthMetricsCounterEntitySchema.validate(
+        structuredClone(initial),
+        initial,
+      ).valid,
+    ).toBe(false);
+
+    for (const invalid of [
+      { ...accepted, reporterId: "synthetic-account" },
+      { ...accepted, ttlSeconds: Number(accepted.ttlSeconds) + 1 },
+      viGetterCounter(accepted),
+    ]) {
+      expect(validateFeedbackBugHealthMetricsCounterSnapshot(invalid).valid)
+        .toBe(false);
+    }
   });
 });
 

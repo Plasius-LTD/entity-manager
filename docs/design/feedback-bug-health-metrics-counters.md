@@ -49,9 +49,27 @@ revision by exactly one and is one of:
 
 Every update advances the canonical server update instant, shortens the live
 TTL against the immutable deletion deadline, and may not extend retention.
-Finalised rows accept only field-for-field exact replay. Persistence must add
-ETag or transactional conditional writes; schema revision validation is not a
+Exact replay is not a persistence transition, including for finalised rows.
+Adapters validate provider reads with
+`validateFeedbackBugHealthMetricsCounterSnapshot`, acknowledge an identical
+retry as a read-only no-op, and must not replace, upsert, touch, or refresh its
+TTL. Material writes use `feedbackBugHealthMetricsCounterEntitySchema` with an
+ETag or transactional condition; schema revision validation is not a
 distributed lock.
+
+Terminal-outcome mutations additionally require an immutable operation receipt
+with a cryptographically random UUIDv4. The receipt uses `counterId` as its
+partition key and is created with If-None-Match in the same Cosmos
+transactional batch as the conditional counter replacement. It records only
+the bound hour, shard, resulting counter revision, a closed outcome, and
+minute-rounded lifecycle values. It contains no stable reporter or request
+identifier and expires after 15 minutes, with hard purge and bounded-backup
+expiry due one day later.
+
+If the provider result is ambiguous, the adapter must read the exact receipt.
+Presence proves the counter operation committed atomically; absence permits a
+new server-random operation. Receipt replacement, upsert, TTL refresh, and
+cross-partition batching are forbidden.
 
 ## Composition and rollout
 
