@@ -47,6 +47,12 @@ one finalisation. Counts cannot decrease or jump, heartbeat slots cannot be
 removed or reordered, retention cannot be extended, and finalisation is
 terminal.
 
+[ADR-0010](./adr-0010-feedback-metrics-atomic-operation-receipts.md) adds one
+narrow exception to the aggregate-only storage shape: a server-random,
+identifier-free, 15-minute operation receipt created atomically with a terminal
+counter mutation. It is reconciliation evidence, not a reporting event source;
+processors never enumerate or project it.
+
 ## Consequences
 
 - The reporting source can be aggregated without enumerating pseudonymous

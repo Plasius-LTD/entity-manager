@@ -154,6 +154,15 @@ exact row IDs, and fail a missing or partial hour closed; absence is never an
 all-zero report. See [ADR-0009](./docs/adrs/adr-0009-identifier-free-feedback-metrics-counters.md)
 and the [counter design](./docs/design/feedback-bug-health-metrics-counters.md).
 
+Every terminal counter mutation must atomically create a server-random
+`feedbackBugHealthMetricsOperationReceiptEntity` in the same `counterId`
+partition. The receipt binds the counter revision and one closed outcome for
+15 minutes, carries no reporter or request data, and cannot be updated or
+replayed as a write. After an ambiguous provider response, adapters read the
+exact receipt: its presence proves the whole transactional batch committed;
+absence permits a fresh attempt. Receipts must use create-only semantics and
+are due for hard deletion and bounded-backup expiry within one further day.
+
 All reporter-control fields are internal, so default serialization exposes no
 pseudonym, reservation, counter, or expiry. The aggregate state ID and its
 complete state are also redacted by log sanitization. Reservation and

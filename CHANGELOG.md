@@ -10,7 +10,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Add an immutable, server-random, identifier-free operation receipt for
+    atomically reconciling ambiguous feedback metrics counter commits without
+    duplicating or misclassifying the terminal response.
 
 - **Changed**
   - (placeholder)
