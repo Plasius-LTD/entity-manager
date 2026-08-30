@@ -47,6 +47,12 @@ one finalisation. Counts cannot decrease or jump, heartbeat slots cannot be
 removed or reordered, retention cannot be extended, and finalisation is
 terminal.
 
+Provider reads use a separate closed snapshot validator. The material
+transition schema rejects all exact replays, including open and finalised rows.
+An adapter may acknowledge an identical retry only as a read-only no-op; it
+must not issue replace, upsert, touch, or TTL-refresh operations because a
+provider-managed modification timestamp could otherwise extend retention.
+
 [ADR-0010](./adr-0010-feedback-metrics-atomic-operation-receipts.md) adds one
 narrow exception to the aggregate-only storage shape: a server-random,
 identifier-free, 15-minute operation receipt created atomically with a terminal

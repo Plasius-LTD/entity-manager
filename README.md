@@ -154,6 +154,12 @@ exact row IDs, and fail a missing or partial hour closed; absence is never an
 all-zero report. See [ADR-0009](./docs/adrs/adr-0009-identifier-free-feedback-metrics-counters.md)
 and the [counter design](./docs/design/feedback-bug-health-metrics-counters.md).
 
+Adapters validate existing provider rows with
+`validateFeedbackBugHealthMetricsCounterSnapshot`. That read-only result does
+not authorise persistence. `feedbackBugHealthMetricsCounterEntitySchema`
+rejects exact replay writes; an identical retry must be acknowledged without a
+replace, upsert, touch, or provider TTL refresh.
+
 Every terminal counter mutation must atomically create a server-random
 `feedbackBugHealthMetricsOperationReceiptEntity` in the same `counterId`
 partition. The receipt binds the counter revision and one closed outcome for

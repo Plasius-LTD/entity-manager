@@ -1538,25 +1538,61 @@ export const feedbackBugHealthMetricsCounterEntityShape = {
  * source. Persistence must combine revision validation with an ETag or
  * transactional condition and must never treat a missing hour as zero.
  */
+const feedbackBugHealthMetricsCounterBaseSchema = createSchema(
+  feedbackBugHealthMetricsCounterEntityShape,
+  "feedbackBugHealthMetricsCounterEntity",
+  {
+    version: "1.0.0",
+    piiEnforcement: "strict",
+    table: "feedbackMetricsControl",
+    unknownFields: "reject",
+    identity: "exact",
+    schemaValidator: (entity) =>
+      metricsCounterState(entity as Record<string, unknown>),
+  },
+);
+const validateFeedbackBugHealthMetricsCounterSnapshotBase =
+  feedbackBugHealthMetricsCounterBaseSchema.validate.bind(
+    feedbackBugHealthMetricsCounterBaseSchema,
+  );
+const feedbackBugHealthMetricsCounterFields = new Set(
+  Object.keys(feedbackBugHealthMetricsCounterBaseSchema._shape),
+);
+
+/**
+ * Validate a provider snapshot without granting permission to persist it.
+ *
+ * Storage adapters must use this boundary when reading an existing row, then
+ * use `feedbackBugHealthMetricsCounterEntitySchema` for a material CAS
+ * transition. A successful snapshot validation is never permission to replace,
+ * upsert, touch, or otherwise replay the provider document.
+ */
+export function validateFeedbackBugHealthMetricsCounterSnapshot(
+  input: unknown,
+) {
+  if (!isRecord(input)) {
+    return invalidResult("Feedback metrics counter snapshot must be a plain object.");
+  }
+  const keys = ownDataKeys(input);
+  if (
+    keys === undefined
+    || keys.some((key) => !feedbackBugHealthMetricsCounterFields.has(key))
+    || !Number.isSafeInteger(input.revision)
+    || Number(input.revision) < 0
+    || !metricsCounterNestedData(input)
+  ) {
+    return invalidResult("Invalid feedback metrics counter snapshot.");
+  }
+  return validateFeedbackBugHealthMetricsCounterSnapshotBase(input);
+}
+
 export const feedbackBugHealthMetricsCounterEntitySchema =
   closeFeedbackSchema(
-    createSchema(
-      feedbackBugHealthMetricsCounterEntityShape,
-      "feedbackBugHealthMetricsCounterEntity",
-      {
-        version: "1.0.0",
-        piiEnforcement: "strict",
-        table: "feedbackMetricsControl",
-        unknownFields: "reject",
-        identity: "exact",
-        schemaValidator: (entity) =>
-          metricsCounterState(entity as Record<string, unknown>),
-      },
-    ),
+    feedbackBugHealthMetricsCounterBaseSchema,
     "increment",
     metricsCounterTransition,
     metricsCounterCreation,
-    () => true,
+    () => false,
     deepDataEqual,
     metricsCounterNestedData,
   );

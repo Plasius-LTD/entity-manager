@@ -28,6 +28,7 @@ export {
   feedbackAbuseControlEntityShape,
   feedbackBugHealthMetricsAbuseBlockCountsShape,
   feedbackBugHealthMetricsCounterEntitySchema,
+  validateFeedbackBugHealthMetricsCounterSnapshot,
   feedbackBugHealthMetricsCounterEntityShape,
   feedbackBugHealthMetricsOperationReceiptEntitySchema,
   feedbackBugHealthMetricsOperationReceiptEntityShape,
