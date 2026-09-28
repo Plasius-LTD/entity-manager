@@ -9,6 +9,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.2.4] - 2026-09-28
+
 - Refresh npm dependencies and published Plasius package baselines after upstream releases (2026-09-28).
 
 - **Added**
@@ -621,3 +635,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.2.1]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.2.1
 [1.2.2]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.2.2
 [1.2.3]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.2.3
+[1.2.4]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.2.4
