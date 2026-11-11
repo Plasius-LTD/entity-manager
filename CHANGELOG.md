@@ -10,6 +10,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.3.0] - 2026-11-11
+
+- **Added**
   - Actor-free feedback review state, transition history, operation receipts, and projection checkpoints, with conditional write and original-expiry validation.
 
 - **Changed**
@@ -704,3 +718,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.2.6]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.2.6
 [1.2.7]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.2.7
 [1.2.8]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.2.8
+[1.3.0]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.3.0
