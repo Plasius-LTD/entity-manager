@@ -10,3 +10,4 @@
 - [ADR-0008: Separate system feedback entities from reporter controls](./adr-0008-feedback-system-and-control-entities.md)
 - [ADR-0009: Use closed identifier-free shards for feedback bug-health counters](./adr-0009-identifier-free-feedback-metrics-counters.md)
 - [ADR-0010: Reconcile counter commits with atomic short-lived receipts](./adr-0010-feedback-metrics-atomic-operation-receipts.md)
+- [ADR-0011: Validate feedback review storage separately from packet and wire contracts](./adr-0011-feedback-review-workflow-entities.md)

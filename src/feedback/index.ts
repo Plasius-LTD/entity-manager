@@ -71,3 +71,20 @@ export {
   type SystemManagedFeedbackReconstructionEntity,
   type SystemManagedFeedbackReportEntity,
 } from "./feedback.entities.js";
+export {
+  FEEDBACK_REVIEW_ENTITY_VERSION,
+  feedbackReviewRemainingTtl,
+  isFeedbackReviewAuditCompletion,
+  isFeedbackReviewCheckpointEntity,
+  isFeedbackReviewCheckpointWrite,
+  isFeedbackReviewHistoryEntity,
+  isFeedbackReviewInitialState,
+  isFeedbackReviewOperationEntity,
+  isFeedbackReviewStateEntity,
+  isFeedbackReviewTransitionWrite,
+  matchesFeedbackReviewOperation,
+  type FeedbackReviewCheckpointEntity,
+  type FeedbackReviewHistoryEntity,
+  type FeedbackReviewOperationEntity,
+  type FeedbackReviewStateEntity,
+} from "./feedback-review-workflow.entities.js";

@@ -426,6 +426,38 @@ protected reasons are omitted by default public serialization.
 
 ---
 
+### Feedback review workflow persistence
+
+The package exports `FeedbackReviewStateEntity`, `FeedbackReviewHistoryEntity`,
+`FeedbackReviewOperationEntity` and `FeedbackReviewCheckpointEntity` with
+`isFeedbackReview*Entity` snapshot guards and their own
+`FEEDBACK_REVIEW_ENTITY_VERSION`. The rows reuse the closed workflow payloads
+from `@plasius/schema` 1.5.0. All four use `kind` (`bug` or `review`) as the
+partition key. Packet filters stay on the state row for indexed queries.
+
+- Use `isFeedbackReviewInitialState` with the initial projection from a
+  validated packet and committed receipt, then create only if absent.
+- Use `feedbackReviewRemainingTtl` and a trusted UTC millisecond timestamp
+  for each write. State, history and operation rows retain the original
+  `expiresAt`. A projection checkpoint has no per-packet TTL.
+- Use `isFeedbackReviewTransitionWrite` before conditionally replacing the
+  state and creating the history event and pending operation in one batch.
+  Pass the ETag from the same current state and use create-only semantics
+  for history and operation. Read receipts by operation UUID in the kind
+  partition and use `matchesFeedbackReviewOperation` before replaying.
+- Use `isFeedbackReviewAuditCompletion` before a conditional receipt
+  replacement, after the restricted audit port has recorded completion.
+  Use `isFeedbackReviewCheckpointWrite` with the active lease epoch only
+  after the corresponding projection writes are durable.
+
+These functions are pure. The adapter supplies time, validates committed
+source evidence, strips known Cosmos metadata, and enforces ETags, lease
+fencing and absolute expiry on reads. Only public schema projections can
+leave the service; row IDs, TTLs, continuations and audit linkage stay
+internal. See [ADR-0011](./docs/adrs/adr-0011-feedback-review-workflow-entities.md)
+for storage, privacy and rollout details.
+
+
 ## Public Serialization
 
 Entity schemas validate the full persisted entity shape, including internal audit and storage metadata.

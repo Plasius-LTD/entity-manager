@@ -10,10 +10,10 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Actor-free feedback review state, transition history, operation receipts, and projection checkpoints, with conditional write and original-expiry validation.
 
 - **Changed**
-  - (placeholder)
+  - Require the published `@plasius/schema` 1.5.0 baseline for the new workflow contracts.
 
 - **Fixed**
   - (placeholder)
