@@ -9,6 +9,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [1.3.1] - 2026-11-22
+
 - Refresh supported npm dependency and security tooling baselines; preserve runtime API contracts (weekly maintenance, 2026-11-22).
 
 - **Added**
@@ -721,3 +735,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.2.7]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.2.7
 [1.2.8]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.2.8
 [1.3.0]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.3.0
+[1.3.1]: https://github.com/Plasius-LTD/entity-manager/releases/tag/v1.3.1
