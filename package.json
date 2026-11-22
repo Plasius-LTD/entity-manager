@@ -16,9 +16,9 @@
     "legal"
   ],
   "dependencies": {
-    "@plasius/schema": "^1.5.0",
-    "@plasius/translations": "^1.0.28",
-    "react": "^19.2.8"
+    "@plasius/schema": "^1.5.1",
+    "@plasius/translations": "^1.0.30",
+    "react": "^19.3.1"
   },
   "exports": {
     ".": {
@@ -62,21 +62,22 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.9.5",
-    "@types/react": "^19.2.18",
-    "@typescript-eslint/eslint-plugin": "^8.69.0",
-    "@typescript-eslint/parser": "^8.69.0",
-    "@vitest/coverage-v8": "^4.1.11",
-    "eslint": "^10.9.1",
-    "globals": "^17.11.0",
-    "tsup": "^8.5.1",
-    "tsx": "^4.23.13",
+    "@types/react": "^19.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.73.0",
+    "@typescript-eslint/parser": "^8.73.0",
+    "@vitest/coverage-v8": "^5.1.1",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "tsup": "^9.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "vitest": "^5.1.1",
+    "vite": "^8.3.8"
   },
   "overrides": {
     "brace-expansion": "^5.0.9",
     "esbuild": "^0.28.1",
-    "minimatch": "^10.2.1",
+    "minimatch": "^11.0.9",
     "nanoid": "^3.3.18"
   },
   "publishConfig": {
